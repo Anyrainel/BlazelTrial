@@ -142,3 +142,53 @@ def thread_messages(thread_id: str) -> list[Message]:
                 .order_by(col(Message.turn), col(Message.id))
             ).all()
         )
+
+
+def pending_for_extraction(thread_id: str, *, limit: int) -> list[tuple[Message, str | None]]:
+    """Oldest user messages not yet fact-extracted, each with the assistant reply before it."""
+    with session() as s:
+        users = s.exec(
+            select(Message)
+            .where(
+                Message.thread_id == thread_id,
+                Message.role == Role.USER,
+                col(Message.extracted).is_(False),
+            )
+            .order_by(col(Message.turn))
+            .limit(limit)
+        ).all()
+        if not users:
+            return []
+        prev_turns = [m.turn - 1 for m in users]
+        replies = {
+            r.turn: r.text
+            for r in s.exec(
+                select(Message).where(
+                    Message.thread_id == thread_id,
+                    Message.role == Role.ASSISTANT,
+                    col(Message.turn).in_(prev_turns),
+                )
+            ).all()
+        }
+    return [(m, replies.get(m.turn - 1)) for m in users]
+
+
+def count_pending_extraction(thread_id: str) -> int:
+    with session() as s:
+        return s.exec(
+            select(func.count())
+            .select_from(Message)
+            .where(
+                Message.thread_id == thread_id,
+                Message.role == Role.USER,
+                col(Message.extracted).is_(False),
+            )
+        ).one()
+
+
+def mark_extracted(ids: list[int]) -> None:
+    with session() as s:
+        for msg in s.exec(select(Message).where(col(Message.id).in_(ids))).all():
+            msg.extracted = True
+            s.add(msg)
+        s.commit()

@@ -8,6 +8,7 @@ import typer
 
 from chatbot.config import get_settings
 from chatbot.core import SLACK_THREAD_ID
+from chatbot.core import flush as core_flush
 from chatbot.core import ingest as core_ingest
 from chatbot.core import send as core_send
 
@@ -55,4 +56,5 @@ def ingest(
             row = json.loads(line)
             core_ingest(user_id, thread, row["user"], row.get("assistant"))
             count += 1
+    core_flush(user_id, thread)
     typer.echo(f"ingested {count} turns into {thread}")

@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # prompt prefix stays cacheable) for several turns before sliding forward.
     history_window_step: int = 8
 
+    # Fact extraction: user messages per extractor call, max chars kept per message, max chars of
+    # already-known facts shown to the extractor (newest kept).
+    extract_batch_turns: int = 10
+    extract_message_chars: int = 2000
+    extract_known_chars: int = 6000
+
     default_user_id: str = "me"
     state_dir: Path = Path(".state")
 

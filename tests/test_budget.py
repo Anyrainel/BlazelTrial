@@ -36,7 +36,7 @@ def test_send_goes_through_budget_and_logs(settings):
         reply = core.send("me", "s1", "hi")
 
     assert reply == "hello there"
-    [entry] = read_log(settings)
+    [entry] = [e for e in read_log(settings) if e["purpose"] == "chat"]
     assert entry["thread_id"] == "s1"
     assert entry["purpose"] == "chat"
     assert entry["limit"] == 8000

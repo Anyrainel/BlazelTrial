@@ -45,4 +45,27 @@ class Message(SQLModel, table=True):
     # Assistant rows only: PydanticAI messages of this turn (incl. tool calls/returns) as JSON,
     # replayed verbatim so history keeps tool call/return pairs intact.
     run_messages_json: str | None = None
+    # User rows only: whether fact extraction has processed this message yet.
+    extracted: bool = Field(default=False, index=True)
     created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class Scope(StrEnum):
+    USER = "user"  # about the user / standing preferences: visible in every thread
+    THREAD = "thread"  # only for the session it was said in
+
+
+class Fact(SQLModel, table=True):
+    """A remembered fact or standing instruction. Never edited: changes supersede it."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    scope: Scope = Field(index=True)
+    thread_id: str | None = Field(default=None, index=True)  # set for thread scope only
+    key: str = Field(index=True)  # short topic slug, e.g. "manager", "spelling"
+    text: str
+    source_thread_id: str
+    source_turn: int
+    created_at: datetime = Field(default_factory=utcnow)
+    superseded_at: datetime | None = Field(default=None, index=True)
+    superseded_by: int | None = None
