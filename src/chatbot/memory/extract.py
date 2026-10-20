@@ -34,6 +34,9 @@ def get_extractor() -> Agent[None, Extraction]:
         build_model(get_settings()),
         output_type=Extraction,
         instructions=prompts.load("extract"),
+        # Each prompt is unique (new messages + current facts), so a cache write would never be
+        # read back; skip the write surcharge. Other providers ignore this key.
+        model_settings={"anthropic_cache": False},
     )
 
 
