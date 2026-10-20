@@ -8,6 +8,11 @@
 | Claude Sonnet 5.5 | PASS | PASS | PASS | 22 | 1,160 | 22/22 (server count) |
 | Muse Spark 1.3 Contributor | PASS | PASS | PASS | 22 | 2,523 | 22/22 (server count) |
 
+Scenario 2 (Claude, 500 ingested turns, 2026-10-20): PASS. "Which caterer ... deposit?" →
+"Saffron Table ... $340, due by Thursday" (turn 20); partner "Sam" (turn 60). Ingest took
+175 s and 72 calls (53 extract, 19 summarize); 75 calls total, all within budget, max chat
+input 5,227 tokens.
+
 Meta needed fixes before passing (W5–W7). Muse answers "write one sentence about our favourite
 organisation's logo" by saying it doesn't know the organisation, where Claude writes the
 sentence with a placeholder; spelling is correct either way.
@@ -24,7 +29,7 @@ sentence with a placeholder; spelling is correct either way.
 ## To revisit
 - R1. Hybrid retrieval (FTS5 + local embeddings): measure after prototype whether embeddings
   are needed or FTS5 + query rewriting is enough.
-- R2. Python 3.13 wheel availability (onnxruntime, sqlite-vec) on Windows.
+- R2. ~~Python 3.13 wheels~~ — fastembed 0.9 and sqlite-vec 0.1.9 work on 3.13 / Windows.
 - R3. Meta model id `muse-spark-1.3-contributor` is built into PydanticAI's `MetaProvider`
   (`https://api.meta.ai/v1`). Still to confirm with a key: usage fields and whether the
   token-count endpoint works. Local Bonsai 2: confirm server and model name.
@@ -33,8 +38,15 @@ sentence with a placeholder; spelling is correct either way.
   estimate x1.5 only for local servers. Re-measure on Bonsai 2.
 - R5. Extraction adds one model call per live message (~1.0-1.2k input tokens). Options:
   skip obviously fact-free messages with a cheap heuristic, or run extraction in the background.
-- R6. The profile block lists every active fact; with hundreds of facts it needs relevance
-  filtering (search, M4) and a token cap.
+- R6. ~~Profile lists every fact~~ — done in M4: preferences in instructions, facts ranked by
+  relevance within FACTS_TOKEN_BUDGET. The extractor still keeps some chatter ("X had coffee
+  and might join project Y"); tighten further if it hurts ranking.
+- R7. Chat prompt caching misses: the cache breakpoint sits after the retrieval-augmented
+  message, which never recurs (history stores the plain text). Add a breakpoint before the
+  current message (PydanticAI `CachePoint`) so instructions + history are reused.
+- R8. A single user message larger than the budget still fails after the retries; treat it
+  like a big document (chunk + summarize) or reject it with a friendly reply.
+- R9. Schema changes are not migrated: delete `.state/state.db` after pulling (pre-release).
 
 ## Where the AI was wrong
 - W1. Claude Code claimed PydanticAI would "work against" a per-call token budget. The user
@@ -62,6 +74,11 @@ sentence with a placeholder; spelling is correct either way.
 - W7. Muse emitted a progress preamble (phase="commentary") that PydanticAI includes in
   `result.output`, and invented a user name ("Hi Maya"). Reply now skips commentary parts;
   prompt forbids invented personal details.
+- W8. Claude Code's first M4 design dumped all facts into the instructions. The 500-turn live
+  run produced 70 facts (~5.8k tokens) and pre-flight refused the chat call at 11.9k. Caught by
+  the budget guard on the live run; facts are now relevance-ranked within a budget.
+- W9. Retrieval first injected 6 snippets into every message (even "latest") because vector
+  nearest neighbours always exist. Caught by a unit test; vector hits now need distance <= 0.35.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -74,3 +91,4 @@ sentence with a placeholder; spelling is correct either way.
 | 2026-10-19 | | M2: SQLModel tables, turn persistence, history window, ingest path |
 | 2026-10-20 | | M3: scoped/versioned facts, extractor, profile; scenarios 1, 4, 5 pass live |
 | 2026-10-20 | | Meta live check: loop fix, token-count fix, prompt + commentary fixes |
+| 2026-10-20 | | M4: hybrid search, retrieval, summaries, bounded context; scenario 2 passes live |
