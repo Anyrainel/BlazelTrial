@@ -53,11 +53,12 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
 ## Non-negotiable invariants
 1. **One code path.** Surfaces are thin adapters over `core.send()`. Seeding history
    (scenario 2) also goes through `send()`; an ingest flag may skip the LLM reply, nothing else.
-2. **Budget is enforced per request.** Every model request runs with
-   `per_request_input_tokens_limit=MAX_INPUT_TOKENS` and a pre-send count (provider endpoint, or
-   local estimate + margin when unavailable). The logged/enforced number is
-   `input + cache_read + cache_creation` from the provider usage field. One JSON line per request
-   to `.state/logs/llm_calls.jsonl`. Never construct a model outside `agent/models.py`.
+2. **Budget is enforced per request.** Every model is wrapped in `agent/budget.py:BudgetedModel`
+   (built only by `agent/models.py:build_model`): pre-flight size check (provider count endpoint
+   or conservative estimate) refuses oversized requests before sending; the provider-reported
+   `input_tokens` (PydanticAI includes cache reads/writes) is logged as one JSON line in
+   `.state/logs/llm_calls.jsonl` and must be <= `MAX_INPUT_TOKENS`. Tag calls with
+   `call_context(thread_id=..., purpose=...)`. Never construct a provider model anywhere else.
 3. **Prompt order for cache hits:** stable first (system, tool defs, user profile), volatile last
    (retrieved memories, recent turns). Compact only when `prompt_cache_outlook()` is cold or the
    budget forces it; compact in chunks so the prefix stays stable between compactions.

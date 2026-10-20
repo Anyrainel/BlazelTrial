@@ -15,8 +15,9 @@
 - R1. Hybrid retrieval (FTS5 + local embeddings): measure after prototype whether embeddings
   are needed or FTS5 + query rewriting is enough.
 - R2. Python 3.13 wheel availability (onnxruntime, sqlite-vec) on Windows.
-- R3. Meta API (Muse Spark 1.3 Contributor) and local Bonsai 2: confirm model IDs, base URLs,
-  usage fields, and whether a token-count endpoint exists (else local estimate + margin).
+- R3. Meta model id `muse-spark-1.3-contributor` is built into PydanticAI's `MetaProvider`
+  (`https://api.meta.ai/v1`). Still to confirm with a key: usage fields and whether the
+  token-count endpoint works. Local Bonsai 2: confirm server and model name.
 
 ## Where the AI was wrong
 - W1. Claude Code claimed PydanticAI would "work against" a per-call token budget. The user
