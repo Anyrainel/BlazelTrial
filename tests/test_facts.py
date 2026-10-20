@@ -10,17 +10,43 @@ from chatbot.memory import messages as store
 from chatbot.memory.models import Scope
 from tests.fakes import extractor_returning
 
-MANAGER = {"scope": "user", "key": "manager", "text": "The user's manager is Priya Raman."}
-BRITISH = {"scope": "user", "key": "spelling_preference", "text": "Use British spelling."}
-AMERICAN = {"scope": "user", "key": "Spelling Preference", "text": "Use American spelling."}
-PLAYFUL = {"scope": "ephemeral", "key": "draft_tone", "text": "Make this draft playful."}
-TERSE = {"scope": "thread", "key": "reply_style", "text": "Keep replies terse in this chat."}
+MANAGER = {
+    "kind": "fact",
+    "scope": "user",
+    "key": "manager",
+    "text": "The user's manager is Priya Raman.",
+}
+BRITISH = {
+    "kind": "preference",
+    "scope": "user",
+    "key": "spelling_preference",
+    "text": "Use British spelling.",
+}
+AMERICAN = {
+    "kind": "preference",
+    "scope": "user",
+    "key": "Spelling Preference",
+    "text": "Use American spelling.",
+}
+PLAYFUL = {
+    "kind": "preference",
+    "scope": "ephemeral",
+    "key": "draft_tone",
+    "text": "Make this draft playful.",
+}
+TERSE = {
+    "kind": "preference",
+    "scope": "thread",
+    "key": "reply_style",
+    "text": "Keep replies terse in this chat.",
+}
 
 
 def chat_model(instructions_seen: list[str]) -> FunctionModel:
     def fn(messages, info: AgentInfo) -> ModelResponse:
         last = next(m for m in reversed(messages) if isinstance(m, ModelRequest))
-        instructions_seen.append(last.instructions or "")
+        prompt = " ".join(str(getattr(p, "content", "")) for p in last.parts)
+        instructions_seen.append((last.instructions or "") + " " + prompt)
         return ModelResponse(parts=[TextPart("ok")])
 
     return FunctionModel(fn)
@@ -57,7 +83,7 @@ def test_changed_preference_supersedes_and_keeps_history():
     assert old.text == "Use British spelling."
     assert old.superseded_by == active.id
 
-    profile = facts.render_profile("me", "other-session")
+    profile = facts.render_preferences("me", "other-session")
     assert profile.index("Use American spelling.") < profile.index("earlier: Use British")
 
 

@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     # Cosine distance cut-off for vector hits (bge-small: unrelated text sits around 0.4-0.6).
     retrieval_max_distance: float = 0.35
 
+    # Relevant facts shown with the current message.
+    facts_token_budget: int = 600
+    # Chat context is assembled to at most this share of MAX_INPUT_TOKENS (estimate), leaving
+    # headroom for estimate error; plus a fixed allowance for tool definitions.
+    context_fill_ratio: float = 0.8
+    tool_overhead_tokens: int = 300
+
     # Rolling summaries of turns that have scrolled out of the replayed window.
     summary_chunk_turns: int = 25
     summary_keep_recent_turns: int = 16  # never summarize the newest N turns

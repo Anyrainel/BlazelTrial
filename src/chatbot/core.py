@@ -5,7 +5,7 @@ import atexit
 import contextvars
 import logging
 import threading
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from pydantic_ai.messages import (
@@ -14,18 +14,20 @@ from pydantic_ai.messages import (
     ModelRequest,
     UserPromptPart,
 )
+from pydantic_ai.models import ModelRequestParameters
 
 from chatbot import prompts
 from chatbot.agent.agent import ChatDeps, get_agent, reply_text
-from chatbot.agent.budget import call_context
+from chatbot.agent.budget import BudgetExceededError, call_context, estimate_tokens
 from chatbot.config import get_settings
+from chatbot.memory import facts, retrieve, search, summarize
 from chatbot.memory import messages as store
-from chatbot.memory import retrieve, search, summarize
 from chatbot.memory.extract import extract_pending
 from chatbot.memory.models import Source
 
 SLACK_THREAD_ID = store.SLACK_THREAD_ID
 logger = logging.getLogger(__name__)
+_RETRY_SCALES = (1.0, 0.6, 0.35)
 
 
 def _restore_user_text(messages: list[ModelMessage], sent: str, original: str) -> list:
@@ -65,6 +67,85 @@ async def _upkeep(user_id: str, thread_id: str, *, force: bool) -> None:
         logger.exception("summarization failed for %s", thread_id)
 
 
+@dataclass
+class _Context:
+    preferences: str
+    summaries: str
+    facts: str
+    snippets: str
+    history_budget: int
+
+
+def _render_prompt(text: str, ctx: _Context) -> str:
+    sections = []
+    if ctx.facts:
+        sections.append(prompts.load("facts_header") + "\n" + ctx.facts)
+    if ctx.snippets:
+        sections.append(prompts.load("snippets_header") + "\n" + ctx.snippets)
+    if not sections:
+        return text
+    return (
+        prompts.load("retrieved")
+        .replace("{sections}", "\n\n".join(sections))
+        .replace("{message}", text)
+    )
+
+
+def _assemble(user_id: str, thread_id: str, text: str, scale: float = 1.0):
+    """Build prompt, history window and deps for a chat turn, shrinking until the estimate fits.
+
+    Each source has its own budget, so this normally fits first time; the loop is a safety net
+    (e.g. a huge pasted message) that degrades context instead of failing the turn. The budget
+    guard on the model still has the final say.
+    """
+    settings = get_settings()
+    cpt = settings.estimate_chars_per_token
+    target = int(settings.max_input_tokens * settings.context_fill_ratio * scale)
+    system_tokens = len(prompts.load("system")) / cpt + settings.tool_overhead_tokens
+
+    def window_for(budget: int):
+        return store.recent_history(
+            thread_id, budget=budget, step=settings.history_window_step, chars_per_token=cpt
+        )
+
+    ctx = _Context(
+        preferences=facts.render_preferences(user_id, thread_id),
+        summaries="",
+        facts=facts.render_relevant_facts(
+            user_id, thread_id, text, int(settings.facts_token_budget * cpt)
+        ),
+        snippets="",
+        history_budget=settings.history_token_budget,
+    )
+    window = window_for(ctx.history_budget)
+    ctx.summaries = summarize.context_block(thread_id, before_turn=window.start_turn)
+    ctx.snippets = retrieve.snippets(thread_id, text, before_turn=window.start_turn)
+
+    def estimate() -> int:
+        strings = ctx.preferences + ctx.summaries + _render_prompt(text, ctx)
+        history = estimate_tokens(window.messages, ModelRequestParameters(), cpt)
+        return int(system_tokens + len(strings) / cpt + history)
+
+    shrink_steps = [
+        lambda: setattr(ctx, "snippets", ""),
+        lambda: setattr(ctx, "summaries", ""),
+        lambda: setattr(ctx, "history_budget", ctx.history_budget // 2),
+        lambda: setattr(ctx, "facts", ""),
+        lambda: setattr(ctx, "history_budget", 0),
+    ]
+    for step in shrink_steps:
+        if estimate() <= target:
+            break
+        logger.warning(
+            "context over target (%d > %d) in %s; shrinking", estimate(), target, thread_id
+        )
+        step()
+        window = window_for(ctx.history_budget)
+
+    deps = ChatDeps(user_id, thread_id, preferences=ctx.preferences, summaries=ctx.summaries)
+    return _render_prompt(text, ctx), window, deps
+
+
 async def _handle(
     user_id: str,
     thread_id: str,
@@ -75,30 +156,24 @@ async def _handle(
     at: datetime | None = None,
 ) -> str | None:
     """One pipeline for live and ingested messages; ingest only skips the model reply."""
-    settings = get_settings()
     store.ensure_thread(user_id, thread_id)
 
     run_json = None
     if generate:
-        window = store.recent_history(
-            thread_id,
-            budget=settings.history_token_budget,
-            step=settings.history_window_step,
-            chars_per_token=settings.estimate_chars_per_token,
-        )
-        found = retrieve.snippets(thread_id, text, before_turn=window.start_turn)
-        prompt = (
-            prompts.load("retrieved").replace("{snippets}", found).replace("{message}", text)
-            if found
-            else text
-        )
-        deps = ChatDeps(
-            user_id,
-            thread_id,
-            summaries=summarize.context_block(thread_id, before_turn=window.start_turn),
-        )
-        with call_context(thread_id=thread_id, purpose="chat"):
-            result = await get_agent().run(prompt, message_history=window.messages, deps=deps)
+        # Our estimate can't know each provider's real count (Meta's overcounts ~2x), so if
+        # the budget guard refuses a request before sending, rebuild a smaller context.
+        for scale in _RETRY_SCALES:
+            prompt, window, deps = _assemble(user_id, thread_id, text, scale)
+            try:
+                with call_context(thread_id=thread_id, purpose="chat"):
+                    result = await get_agent().run(
+                        prompt, message_history=window.messages, deps=deps
+                    )
+                break
+            except BudgetExceededError as exc:
+                if exc.stage != "preflight" or scale == _RETRY_SCALES[-1]:
+                    raise
+                logger.warning("chat context refused (%s); retrying smaller", exc)
         reply = reply_text(result)
         stored = _restore_user_text(result.new_messages(), prompt, text)
         run_json = ModelMessagesTypeAdapter.dump_json(stored).decode()

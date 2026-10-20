@@ -10,7 +10,14 @@ Remember:
 
 Do not remember:
 - Questions, chit-chat, requests for one-off tasks, or things the assistant said.
+- Transient status and day-to-day chatter: who pinged whom, who is out sick today, meetings
+  that ran long, what the user ate, routine appointments. The full conversation stays
+  searchable, so only keep what would still matter weeks later.
 - Content of documents or drafts.
+
+Kind — pick one per item:
+- `preference`: an instruction about how the assistant should behave or write.
+- `fact`: anything about the user and their world.
 
 Scope — pick exactly one per item:
 - `user`: true about the user or meant to apply from now on, in every conversation.

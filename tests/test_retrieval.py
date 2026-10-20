@@ -131,3 +131,35 @@ def test_ingest_keeps_original_timestamps():
     core.ingest("me", "slack-dm", row["user"], row["assistant"], datetime.fromisoformat(row["ts"]))
     msg = store.thread_messages("slack-dm")[0]
     assert msg.created_at.isoformat().startswith(row["ts"][:16])
+
+
+def test_only_relevant_facts_are_shown_within_budget():
+    from chatbot.memory import facts
+    from chatbot.memory.models import FactKind, Scope
+
+    many = [
+        facts.NewFact(Scope.USER, f"colleague_{i}", f"Colleague {i} works on project {i}.")
+        for i in range(60)
+    ]
+    many.append(facts.NewFact(Scope.USER, "manager", "The user's manager is Priya Raman."))
+    many.append(
+        facts.NewFact(Scope.USER, "spelling", "Use American spelling.", FactKind.PREFERENCE)
+    )
+    facts.apply("me", "A", 1, many)
+
+    block = facts.render_relevant_facts("me", "A", "Who is my manager?", max_chars=400)
+    assert "Priya Raman" in block.splitlines()[0]  # most relevant first
+    assert len(block) <= 400
+    assert "American spelling" not in block  # preferences live in the instructions
+    assert "American spelling" in facts.render_preferences("me", "A")
+
+
+def test_context_shrinks_instead_of_failing_on_huge_input(monkeypatch):
+    load_history(120)
+    monkeypatch.setenv("MAX_INPUT_TOKENS", "4500")
+    get_settings.cache_clear()
+    rec = Recorder()
+    with get_agent().override(model=rec.model()):
+        core.send("me", "slack-dm", "Which caterer did I book? " + "padding " * 600)
+    assert rec.prompts  # the turn went through
+    assert "Earlier in this conversation" not in rec.instructions[0]  # summaries dropped

@@ -13,12 +13,13 @@ from chatbot.agent.models import build_model
 from chatbot.config import get_settings
 from chatbot.memory import facts as fact_store
 from chatbot.memory import messages as store
-from chatbot.memory.models import Message, Scope
+from chatbot.memory.models import FactKind, Message, Scope
 
 logger = logging.getLogger(__name__)
 
 
 class ExtractedItem(BaseModel):
+    kind: Literal["preference", "fact"]
     scope: Literal["user", "thread", "ephemeral"]
     key: str = Field(description="short snake_case topic")
     text: str = Field(description="one self-contained sentence")
@@ -58,7 +59,7 @@ def _known_facts(user_id: str, thread_id: str, max_chars: int) -> list[str]:
     """Active facts as lines, newest kept when over `max_chars`, returned oldest first."""
     lines, used = [], 0
     for f in reversed(fact_store.active_facts(user_id, thread_id)):
-        line = f"- [{f.scope}] {f.key}: {f.text}"
+        line = f"- [{f.scope}/{f.kind}] {f.key}: {f.text}"
         if used + len(line) > max_chars:
             break
         lines.append(line)
@@ -81,7 +82,7 @@ async def extract_pending(user_id: str, thread_id: str) -> int:
 
         last_turn = batch[-1][0].turn
         keep = [
-            fact_store.NewFact(Scope(i.scope), i.key, i.text)
+            fact_store.NewFact(Scope(i.scope), i.key, i.text, FactKind(i.kind))
             for i in result.output.items
             if i.scope != "ephemeral"
         ]

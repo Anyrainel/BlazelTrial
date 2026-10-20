@@ -55,6 +55,11 @@ class Scope(StrEnum):
     THREAD = "thread"  # only for the session it was said in
 
 
+class FactKind(StrEnum):
+    PREFERENCE = "preference"  # how the assistant should behave/write: always in context
+    FACT = "fact"  # about the user's world: in context when relevant to the message
+
+
 class Fact(SQLModel, table=True):
     """A remembered fact or standing instruction. Never edited: changes supersede it."""
 
@@ -63,6 +68,7 @@ class Fact(SQLModel, table=True):
     scope: Scope = Field(index=True)
     thread_id: str | None = Field(default=None, index=True)  # set for thread scope only
     key: str = Field(index=True)  # short topic slug, e.g. "manager", "spelling"
+    kind: FactKind = Field(default=FactKind.FACT, index=True)
     text: str
     source_thread_id: str
     source_turn: int

@@ -31,7 +31,7 @@ class FastEmbedder:
 class HashEmbedder:
     """Deterministic bag-of-words hashing. For offline tests; no semantics beyond word overlap."""
 
-    dim = 64
+    dim = 256
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         out = []
