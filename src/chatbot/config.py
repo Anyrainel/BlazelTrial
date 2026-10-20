@@ -29,10 +29,13 @@ class Settings(BaseSettings):
     # How to size a request before sending it:
     #   server   = provider token-count endpoint (falls back to estimate if unsupported)
     #   estimate = local character-based estimate
-    #   auto     = server for anthropic, estimate otherwise
+    #   auto     = server for anthropic and meta, estimate otherwise (local servers)
     token_count_mode: TokenCountMode = "auto"
     # Conservative chars-per-token ratio for the local estimate (lower = safer).
     estimate_chars_per_token: float = 3.0
+    # Multiplier on the local estimate. Measured on Meta: provider count was up to 1.31x our raw
+    # estimate (hidden structured-output/tool framing), so 1.5 keeps the pre-flight conservative.
+    estimate_safety_factor: float = 1.5
     # Raise when the provider-reported input exceeds the cap (otherwise only logged).
     budget_strict: bool = True
 

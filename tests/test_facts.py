@@ -110,3 +110,18 @@ def get_extractor_override(raw):
     from chatbot.memory.extract import get_extractor
 
     return get_extractor().override(model=build_model(get_settings(), raw=raw))
+
+
+def test_commentary_preamble_is_not_part_of_the_reply():
+    def fn(messages, info):
+        return ModelResponse(
+            parts=[
+                TextPart("Let me check that first.", provider_details={"phase": "commentary"}),
+                TextPart(
+                    "Your manager is Priya Raman.", provider_details={"phase": "final_answer"}
+                ),
+            ]
+        )
+
+    with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
+        assert core.send("me", "A", "Who's my manager?") == "Your manager is Priya Raman."

@@ -39,13 +39,14 @@ def build_raw_model(settings: Settings) -> Model:
 def build_model(settings: Settings, raw: Model | None = None) -> BudgetedModel:
     """Wrap the provider model with budget guard + call log. `raw` injects a test model."""
     use_server = settings.token_count_mode == "server" or (
-        settings.token_count_mode == "auto" and settings.llm_provider == "anthropic"
+        settings.token_count_mode == "auto" and settings.llm_provider in ("anthropic", "meta")
     )
     return BudgetedModel(
         raw or build_raw_model(settings),
         max_input_tokens=settings.max_input_tokens,
         use_server_count=use_server,
         chars_per_token=settings.estimate_chars_per_token,
+        safety_factor=settings.estimate_safety_factor,
         strict=settings.budget_strict,
         log=CallLog(settings.llm_log_path),
     )

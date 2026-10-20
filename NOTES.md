@@ -2,6 +2,16 @@
 
 > Working log now; condensed into the one-page deliverable at the end.
 
+## Live results (scenarios 1, 4, 5 — 2026-10-20)
+| Model | S1 cross-thread | S4 changed mind | S5 stays local | Calls | Max input | Pre-flight ≥ actual |
+|---|---|---|---|---|---|---|
+| Claude Sonnet 5.5 | PASS | PASS | PASS | 22 | 1,160 | 22/22 (server count) |
+| Muse Spark 1.3 Contributor | PASS | PASS | PASS | 22 | 2,523 | 22/22 (server count) |
+
+Meta needed fixes before passing (W5–W7). Muse answers "write one sentence about our favourite
+organisation's logo" by saying it doesn't know the organisation, where Claude writes the
+sentence with a placeholder; spelling is correct either way.
+
 ## Assumptions
 - A1. Single user, hard-coded `user_id` mapping between main chat and Slack.
 - A2. Runtime state, including the generated document corpus, lives in gitignored `.state/`
@@ -18,8 +28,9 @@
 - R3. Meta model id `muse-spark-1.3-contributor` is built into PydanticAI's `MetaProvider`
   (`https://api.meta.ai/v1`). Still to confirm with a key: usage fields and whether the
   token-count endpoint works. Local Bonsai 2: confirm server and model name.
-- R4. Calibrate the local estimate (chars/3 + 8 per part) against provider-reported counts once
-  keys are in; it must stay above the real count. (Claude uses the server count, exact so far.)
+- R4. Local estimate (chars/3 + 8 per part) undercounted Meta by up to 31% (structured-output
+  framing is hidden from us). Now: server count for Claude and Meta (Meta's overcounts ~2x, safe),
+  estimate x1.5 only for local servers. Re-measure on Bonsai 2.
 - R5. Extraction adds one model call per live message (~1.0-1.2k input tokens). Options:
   skip obviously fact-free messages with a cheap heuristic, or run extraction in the background.
 - R6. The profile block lists every active fact; with hundreds of facts it needs relevance
@@ -40,6 +51,17 @@
 - W4. A test fixture installed the fake chat model before another fixture cleared the agent
   cache, so tests silently hit the (blocked) real model. Caught by the failing tests; fixed by
   making the dependency explicit.
+- W5. Claude Code's system prompt called memory "authoritative, prefer it on conflict". Claude
+  coped, but Muse refused "Switch to American spelling" because memory still said British (it
+  updates after the reply). Caught in the Meta live run; the newest message now always wins.
+- W6. Claude Code's sync `send()` used `asyncio.run()` per call. Cached provider clients keep
+  connections bound to the first (closed) loop, so the 2nd Meta call crashed with "Event loop is
+  closed". Fixed with one shared `asyncio.Runner`; the first fix then broke 10 tests because
+  the Runner reused the context vars captured on its first call (overrides invisible) — fixed by
+  passing `context=copy_context()` per call.
+- W7. Muse emitted a progress preamble (phase="commentary") that PydanticAI includes in
+  `result.output`, and invented a user name ("Hi Maya"). Reply now skips commentary parts;
+  prompt forbids invented personal details.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -51,3 +73,4 @@
 | 2026-10-19 | | M1: uv project, config, model factory, budget guard + call log, CLI |
 | 2026-10-19 | | M2: SQLModel tables, turn persistence, history window, ingest path |
 | 2026-10-20 | | M3: scoped/versioned facts, extractor, profile; scenarios 1, 4, 5 pass live |
+| 2026-10-20 | | Meta live check: loop fix, token-count fix, prompt + commentary fixes |

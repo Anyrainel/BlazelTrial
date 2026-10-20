@@ -118,6 +118,7 @@ class BudgetedModel(WrapperModel):
         max_input_tokens: int,
         use_server_count: bool,
         chars_per_token: float,
+        safety_factor: float = 1.0,
         strict: bool,
         log: CallLog,
     ):
@@ -125,6 +126,7 @@ class BudgetedModel(WrapperModel):
         self.max_input_tokens = max_input_tokens
         self.use_server_count = use_server_count
         self.chars_per_token = chars_per_token
+        self.safety_factor = safety_factor
         self.strict = strict
         self.log = log
 
@@ -143,7 +145,8 @@ class BudgetedModel(WrapperModel):
             except Exception as exc:  # unsupported endpoint, network error, ...
                 logger.warning("server token count failed, falling back to estimate: %s", exc)
         if tokens is None:
-            tokens = estimate_tokens(messages, params, self.chars_per_token)
+            raw = estimate_tokens(messages, params, self.chars_per_token)
+            tokens = int(raw * self.safety_factor)
         if tokens > self.max_input_tokens:
             self._log(None, tokens, method, error="preflight_over_budget")
             raise BudgetExceededError(tokens, self.max_input_tokens, "preflight")

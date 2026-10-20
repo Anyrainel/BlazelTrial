@@ -87,3 +87,25 @@ def test_limit_is_configurable_from_env(monkeypatch):
     from chatbot.config import Settings
 
     assert Settings(_env_file=None).max_input_tokens == 1234
+
+
+def test_estimate_safety_factor_scales_preflight(settings):
+    settings.max_input_tokens = 100
+    settings.estimate_safety_factor = 1.0
+    text = "x" * 240  # ~80 raw estimated tokens of content plus overhead
+    assert Agent(build_model(settings, raw=reply_with_usage(10))).run_sync(text).output == "ok"
+
+    settings.estimate_safety_factor = 2.0
+    with pytest.raises(BudgetExceededError):
+        Agent(build_model(settings, raw=reply_with_usage(10))).run_sync(text)
+
+
+def test_sync_wrappers_share_one_open_event_loop():
+    import asyncio
+
+    async def current_loop():
+        return asyncio.get_running_loop()
+
+    first = core._run_sync(current_loop())
+    second = core._run_sync(current_loop())
+    assert first is second and not first.is_closed()

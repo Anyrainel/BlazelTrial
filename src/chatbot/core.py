@@ -1,9 +1,12 @@
 """The single entry point shared by every surface (CLI, HTTP, web, Slack)."""
 
 import asyncio
+import atexit
+import contextvars
 import logging
+import threading
 
-from chatbot.agent.agent import ChatDeps, get_agent
+from chatbot.agent.agent import ChatDeps, get_agent, reply_text
 from chatbot.agent.budget import call_context
 from chatbot.config import get_settings
 from chatbot.memory import messages as store
@@ -33,7 +36,7 @@ async def _handle(
             result = await get_agent().run(
                 text, message_history=history, deps=ChatDeps(user_id, thread_id)
             )
-        reply = result.output
+        reply = reply_text(result)
         run_json = result.new_messages_json().decode()
 
     store.record_turn(
@@ -75,14 +78,32 @@ async def ingest_async(user_id: str, thread_id: str, text: str, reply: str | Non
     await _handle(user_id, thread_id, text, generate=False, reply=reply)
 
 
+# Sync wrappers share ONE event loop for the whole process. A fresh `asyncio.run()` per call
+# closes its loop, while cached provider clients keep pooled connections bound to it, so the
+# next call fails with "Event loop is closed".
+_runner: asyncio.Runner | None = None
+_runner_lock = threading.Lock()
+
+
+def _run_sync(coro):
+    global _runner
+    with _runner_lock:
+        if _runner is None:
+            _runner = asyncio.Runner()
+            atexit.register(_runner.close)
+        # Run in the caller's current context; the Runner would otherwise reuse the context
+        # captured on its first call (losing later context-var changes such as overrides).
+        return _runner.run(coro, context=contextvars.copy_context())
+
+
 def send(user_id: str, thread_id: str, text: str) -> str:
     """Sync wrapper for callers without an event loop (CLI, scripts, scenario runner)."""
-    return asyncio.run(send_async(user_id, thread_id, text))
+    return _run_sync(send_async(user_id, thread_id, text))
 
 
 def ingest(user_id: str, thread_id: str, text: str, reply: str | None = None) -> None:
-    asyncio.run(ingest_async(user_id, thread_id, text, reply))
+    _run_sync(ingest_async(user_id, thread_id, text, reply))
 
 
 def flush(user_id: str, thread_id: str) -> None:
-    asyncio.run(flush_async(user_id, thread_id))
+    _run_sync(flush_async(user_id, thread_id))

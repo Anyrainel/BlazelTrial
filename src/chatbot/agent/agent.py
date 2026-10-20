@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from functools import cache
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.agent import AgentRunResult
+from pydantic_ai.messages import ModelResponse, TextPart
 
 from chatbot import prompts
 from chatbot.agent.models import build_model
@@ -35,3 +37,21 @@ def get_agent() -> Agent[ChatDeps, str]:
         return facts.render_profile(ctx.deps.user_id, ctx.deps.thread_id)
 
     return agent
+
+
+def reply_text(result: AgentRunResult[str]) -> str:
+    """The user-facing reply: final response text without progress preambles.
+
+    Meta Muse models emit interim text tagged phase="commentary" ("I'll answer that next...");
+    PydanticAI keeps it in the output string. We drop it here but keep it in the stored run,
+    since the phase is sent back to the model on replay.
+    """
+    final = next((m for m in reversed(result.new_messages()) if isinstance(m, ModelResponse)), None)
+    if final is None:
+        return result.output
+    texts = [
+        p.content
+        for p in final.parts
+        if isinstance(p, TextPart) and (p.provider_details or {}).get("phase") != "commentary"
+    ]
+    return "\n\n".join(t.strip() for t in texts if t.strip()) or result.output
