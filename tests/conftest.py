@@ -3,6 +3,7 @@ from pydantic_ai import models
 
 from chatbot.agent.agent import get_agent
 from chatbot.config import Settings, get_settings
+from chatbot.memory.db import get_engine
 
 # Unit tests must never reach a real provider.
 models.ALLOW_MODEL_REQUESTS = False
@@ -14,11 +15,16 @@ def _isolated_env(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("STATE_DIR", str(tmp_path / "state"))
-    get_settings.cache_clear()
-    get_agent.cache_clear()
+    _clear_caches()
     yield
-    get_settings.cache_clear()
-    get_agent.cache_clear()
+    _clear_caches()
+
+
+def _clear_caches() -> None:
+    if get_engine.cache_info().currsize:
+        get_engine().dispose()
+    for fn in (get_settings, get_agent, get_engine):
+        fn.cache_clear()
 
 
 @pytest.fixture

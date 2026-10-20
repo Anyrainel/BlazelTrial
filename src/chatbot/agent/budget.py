@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter, ModelResponse
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
@@ -74,16 +74,40 @@ class CallLog:
             f.write(line + "\n")
 
 
+# Per-part allowance for role markers, tool-call framing, etc.
+_PART_OVERHEAD_TOKENS = 8
+
+
+def _part_text(part: Any) -> str:
+    if hasattr(part, "model_response_str"):  # tool return / retry prompt
+        return part.model_response_str()
+    if hasattr(part, "args_as_json_str"):  # tool call
+        return part.tool_name + part.args_as_json_str()
+    content = getattr(part, "content", "")
+    return content if isinstance(content, str) else json.dumps(content, default=str)
+
+
 def estimate_tokens(
     messages: list[ModelMessage], params: ModelRequestParameters, chars_per_token: float
 ) -> int:
-    """Conservative local estimate: JSON of messages + tool schemas, divided by chars/token."""
-    payload = ModelMessagesTypeAdapter.dump_json(messages).decode()
+    """Conservative local estimate of what the provider will count.
+
+    Counts the content actually sent (text, tool args/returns, instructions, tool schemas), not
+    PydanticAI's stored metadata, at a pessimistic chars-per-token ratio plus per-part overhead.
+    """
+    chars, parts = 0, 0
+    for message in messages:
+        chars += len(getattr(message, "instructions", None) or "")
+        for part in message.parts:
+            chars += len(_part_text(part))
+            parts += 1
     tools = [*params.function_tools, *params.output_tools]
-    payload += json.dumps(
-        [{"n": t.name, "d": t.description, "p": t.parameters_json_schema} for t in tools]
+    chars += len(
+        json.dumps(
+            [{"n": t.name, "d": t.description, "p": t.parameters_json_schema} for t in tools]
+        )
     )
-    return int(len(payload) / chars_per_token) + 1
+    return int(chars / chars_per_token) + parts * _PART_OVERHEAD_TOKENS + 1
 
 
 class BudgetedModel(WrapperModel):

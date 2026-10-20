@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Raise when the provider-reported input exceeds the cap (otherwise only logged).
     budget_strict: bool = True
 
+    # Max estimated tokens of verbatim recent turns replayed into each chat request.
+    history_token_budget: int = 2500
+    # The replayed window starts on a multiple of this many turns, so it stays put (and the
+    # prompt prefix stays cacheable) for several turns before sliding forward.
+    history_window_step: int = 8
+
     default_user_id: str = "me"
     state_dir: Path = Path(".state")
 
@@ -43,6 +49,10 @@ class Settings(BaseSettings):
     def state_path(self) -> Path:
         path = self.state_dir if self.state_dir.is_absolute() else REPO_ROOT / self.state_dir
         return path
+
+    @property
+    def db_path(self) -> Path:
+        return self.state_path / "state.db"
 
     @property
     def llm_log_path(self) -> Path:

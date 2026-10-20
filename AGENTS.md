@@ -39,6 +39,7 @@ uv sync                                    # install Python deps
 uv run python scripts/gen_docs.py          # generate .state/docs corpus (incl. Q3-plan)
 uv run chatbot chat --thread s1            # interactive CLI session
 uv run chatbot send USER THREAD "text"     # one-shot call to the core
+uv run chatbot ingest FILE.jsonl           # load {"user","assistant"} lines into slack-dm via core
 uv run chatbot serve                       # FastAPI: POST /send, web UI at /
 uv run chatbot slack                       # Slack app (Socket Mode)
 uv run python -m scenarios                 # scenario script, prints PASS/FAIL

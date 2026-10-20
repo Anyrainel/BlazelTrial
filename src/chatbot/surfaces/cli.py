@@ -1,10 +1,14 @@
 """Command-line surface: one-shot `send` and an interactive `chat` loop."""
 
+import json
 import uuid
+from pathlib import Path
 
 import typer
 
 from chatbot.config import get_settings
+from chatbot.core import SLACK_THREAD_ID
+from chatbot.core import ingest as core_ingest
 from chatbot.core import send as core_send
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -33,3 +37,22 @@ def chat(
         if not text:
             break
         typer.echo(f"bot> {core_send(user_id, thread_id, text)}")
+
+
+@app.command()
+def ingest(
+    path: Path,
+    thread: str = typer.Option(SLACK_THREAD_ID, help="Thread to load the history into."),
+    user: str = typer.Option(None, help="User id; defaults to DEFAULT_USER_ID."),
+) -> None:
+    """Load history from JSONL lines {"user": ..., "assistant": ...} via the core ingest path."""
+    user_id = user or get_settings().default_user_id
+    count = 0
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            core_ingest(user_id, thread, row["user"], row.get("assistant"))
+            count += 1
+    typer.echo(f"ingested {count} turns into {thread}")

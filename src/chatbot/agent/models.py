@@ -1,7 +1,7 @@
 """Model factory. The only place a provider model is constructed."""
 
 from pydantic_ai.models import Model
-from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.meta import MetaProvider
@@ -23,7 +23,9 @@ def build_raw_model(settings: Settings) -> Model:
             provider = AnthropicProvider(
                 api_key=_secret(settings.anthropic_api_key, "ANTHROPIC_API_KEY")
             )
-            return AnthropicModel(settings.llm_model, provider=provider)
+            # Automatic prompt caching: stable prefixes (instructions, older turns) get cache hits.
+            cache = AnthropicModelSettings(anthropic_cache=True)
+            return AnthropicModel(settings.llm_model, provider=provider, settings=cache)
         case "meta":
             provider = MetaProvider(api_key=_secret(settings.meta_api_key, "META_API_KEY"))
             return OpenAIResponsesModel(settings.llm_model, provider=provider)

@@ -18,11 +18,17 @@
 - R3. Meta model id `muse-spark-1.3-contributor` is built into PydanticAI's `MetaProvider`
   (`https://api.meta.ai/v1`). Still to confirm with a key: usage fields and whether the
   token-count endpoint works. Local Bonsai 2: confirm server and model name.
+- R4. Calibrate the local estimate (chars/3 + 8 per part) against provider-reported counts once
+  keys are in; it must stay above the real count.
 
 ## Where the AI was wrong
 - W1. Claude Code claimed PydanticAI would "work against" a per-call token budget. The user
   pushed back; checking current docs showed `per_request_input_tokens_limit` +
   `count_tokens_before_request` and `ProcessHistory` hooks cover it. Switched to PydanticAI.
+
+- W2. Claude Code's first token estimator measured the JSON of stored PydanticAI messages
+  (timestamps, ids, metadata), inflating sizes several-fold, so a long thread replayed only 1
+  turn. Caught by the history-window unit test; switched to counting only the content sent.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -32,3 +38,4 @@
 |---|---|---|
 | 2026-10-19 | | Spec, AGENTS.md, stack decisions |
 | 2026-10-19 | | M1: uv project, config, model factory, budget guard + call log, CLI |
+| 2026-10-19 | | M2: SQLModel tables, turn persistence, history window, ingest path |

@@ -1,0 +1,48 @@
+"""SQLModel tables. Raw SQL (FTS5 / vector virtual tables) lives only in `memory/search.py`."""
+
+from datetime import UTC, datetime
+from enum import StrEnum
+
+from sqlmodel import Field, SQLModel
+
+
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+class ThreadKind(StrEnum):
+    SESSION = "session"
+    SLACK = "slack"
+
+
+class Role(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class Source(StrEnum):
+    LIVE = "live"
+    INGEST = "ingest"
+
+
+class Thread(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    user_id: str = Field(index=True)
+    kind: ThreadKind
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Message(SQLModel, table=True):
+    """One user or assistant message. A turn = a user message plus its assistant reply."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    thread_id: str = Field(foreign_key="thread.id", index=True)
+    user_id: str = Field(index=True)
+    turn: int = Field(index=True)  # 1-based turn number within the thread
+    role: Role
+    text: str
+    source: Source = Source.LIVE
+    # Assistant rows only: PydanticAI messages of this turn (incl. tool calls/returns) as JSON,
+    # replayed verbatim so history keeps tool call/return pairs intact.
+    run_messages_json: str | None = None
+    created_at: datetime = Field(default_factory=utcnow, index=True)
