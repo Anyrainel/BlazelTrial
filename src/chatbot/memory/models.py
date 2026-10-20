@@ -69,3 +69,14 @@ class Fact(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     superseded_at: datetime | None = Field(default=None, index=True)
     superseded_by: int | None = None
+
+
+class Summary(SQLModel, table=True):
+    """Summary of a contiguous chunk of turns that scrolled out of the replayed window."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    thread_id: str = Field(foreign_key="thread.id", index=True)
+    start_turn: int
+    end_turn: int = Field(index=True)
+    text: str
+    created_at: datetime = Field(default_factory=utcnow)

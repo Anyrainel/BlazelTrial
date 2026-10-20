@@ -31,7 +31,7 @@ def reply_with_usage(input_tokens: int, calls: list | None = None) -> FunctionMo
 
 
 def test_send_goes_through_budget_and_logs(settings):
-    model = build_model(settings, raw=TestModel(custom_output_text="hello there"))
+    model = build_model(settings, raw=TestModel(custom_output_text="hello there", call_tools=[]))
     with get_agent().override(model=model):
         reply = core.send("me", "s1", "hi")
 

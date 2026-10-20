@@ -2,6 +2,7 @@
 
 from functools import cache
 
+import sqlite_vec
 from sqlalchemy import Engine, event
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -21,8 +22,14 @@ def get_engine() -> Engine:
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA foreign_keys=ON")
         cur.close()
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
 
     SQLModel.metadata.create_all(engine)
+    from chatbot.memory import search  # raw-SQL virtual tables live there
+
+    search.create_fts(engine)
     return engine
 
 

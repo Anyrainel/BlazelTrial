@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -46,7 +47,7 @@ def ingest(
     thread: str = typer.Option(SLACK_THREAD_ID, help="Thread to load the history into."),
     user: str = typer.Option(None, help="User id; defaults to DEFAULT_USER_ID."),
 ) -> None:
-    """Load history from JSONL lines {"user": ..., "assistant": ...} via the core ingest path."""
+    """Load history from JSONL lines {"user", "assistant"?, "ts"?} via the core ingest path."""
     user_id = user or get_settings().default_user_id
     count = 0
     with path.open(encoding="utf-8") as f:
@@ -54,7 +55,8 @@ def ingest(
             if not line.strip():
                 continue
             row = json.loads(line)
-            core_ingest(user_id, thread, row["user"], row.get("assistant"))
+            at = datetime.fromisoformat(row["ts"]) if row.get("ts") else None
+            core_ingest(user_id, thread, row["user"], row.get("assistant"), at)
             count += 1
     core_flush(user_id, thread)
     typer.echo(f"ingested {count} turns into {thread}")

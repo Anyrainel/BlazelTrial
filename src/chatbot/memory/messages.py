@@ -1,5 +1,8 @@
 """Message store: persist turns and rebuild a bounded, cache-friendly history window."""
 
+from dataclasses import dataclass
+from datetime import datetime
+
 from pydantic_ai.messages import (
     ModelMessage,
     ModelMessagesTypeAdapter,
@@ -13,7 +16,7 @@ from sqlmodel import col, func, select
 
 from chatbot.agent.budget import estimate_tokens
 from chatbot.memory.db import session
-from chatbot.memory.models import Message, Role, Source, Thread, ThreadKind
+from chatbot.memory.models import Message, Role, Source, Thread, ThreadKind, utcnow
 
 SLACK_THREAD_ID = "slack-dm"
 
@@ -37,12 +40,13 @@ def record_turn(
     *,
     run_messages_json: str | None = None,
     source: Source = Source.LIVE,
-) -> int:
-    """Store one turn atomically (`reply_text=None`: user message only). Returns the turn no."""
+    at: datetime | None = None,
+) -> list[Message]:
+    """Store one turn atomically (`reply_text=None`: user message only). Returns stored rows."""
     with session() as s:
         last = s.exec(select(func.max(Message.turn)).where(Message.thread_id == thread_id)).one()
         turn = (last or 0) + 1
-        s.add(
+        rows = [
             Message(
                 thread_id=thread_id,
                 user_id=user_id,
@@ -50,10 +54,11 @@ def record_turn(
                 role=Role.USER,
                 text=user_text,
                 source=source,
+                created_at=at or utcnow(),
             )
-        )
+        ]
         if reply_text is not None:
-            s.add(
+            rows.append(
                 Message(
                     thread_id=thread_id,
                     user_id=user_id,
@@ -62,10 +67,12 @@ def record_turn(
                     text=reply_text,
                     source=source,
                     run_messages_json=run_messages_json,
+                    created_at=at or utcnow(),
                 )
             )
+        s.add_all(rows)
         s.commit()
-        return turn
+        return rows
 
 
 def _turn_messages(rows: list[Message]) -> list[ModelMessage]:
@@ -103,9 +110,15 @@ def choose_window_start(turn_tokens: list[tuple[int, int]], budget: int, step: i
     return aligned if aligned <= last else earliest
 
 
+@dataclass(frozen=True)
+class HistoryWindow:
+    messages: list[ModelMessage]
+    start_turn: int  # first turn replayed verbatim; older turns need summaries/search
+
+
 def recent_history(
     thread_id: str, *, budget: int, step: int, chars_per_token: float, max_scan: int = 200
-) -> list[ModelMessage]:
+) -> HistoryWindow:
     """Recent turns of this thread as PydanticAI history, bounded by `budget` tokens.
 
     Whole turns only, so a tool call is never separated from its return.
@@ -113,7 +126,7 @@ def recent_history(
     with session() as s:
         last = s.exec(select(func.max(Message.turn)).where(Message.thread_id == thread_id)).one()
         if not last:
-            return []
+            return HistoryWindow([], 1)
         rows = s.exec(
             select(Message)
             .where(Message.thread_id == thread_id, Message.turn > last - max_scan)
@@ -124,13 +137,27 @@ def recent_history(
     for r in rows:
         by_turn.setdefault(r.turn, []).append(r)
     params = ModelRequestParameters()
-    turns = {t: _turn_messages(rs) for t, rs in by_turn.items()}
-    sizes = [(t, estimate_tokens(m, params, chars_per_token)) for t, m in turns.items()]
+    replay = {t: _turn_messages(rs) for t, rs in by_turn.items()}
+    sizes = [(t, estimate_tokens(m, params, chars_per_token)) for t, m in replay.items()]
 
     start = choose_window_start(sizes, budget, step)
     if start is None:
-        return []
-    return [m for t, msgs in turns.items() if t >= start for m in msgs]
+        return HistoryWindow([], last + 1)
+    return HistoryWindow([m for t, msgs in replay.items() if t >= start for m in msgs], start)
+
+
+def turns(thread_id: str, turn_numbers: list[int]) -> dict[int, list[Message]]:
+    """Messages of the given turns, grouped by turn (user first)."""
+    with session() as s:
+        rows = s.exec(
+            select(Message)
+            .where(Message.thread_id == thread_id, col(Message.turn).in_(turn_numbers))
+            .order_by(col(Message.turn), col(Message.id))
+        ).all()
+    out: dict[int, list[Message]] = {}
+    for r in rows:
+        out.setdefault(r.turn, []).append(r)
+    return out
 
 
 def thread_messages(thread_id: str) -> list[Message]:

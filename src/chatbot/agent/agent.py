@@ -10,13 +10,14 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from chatbot import prompts
 from chatbot.agent.models import build_model
 from chatbot.config import get_settings
-from chatbot.memory import facts
+from chatbot.memory import facts, retrieve
 
 
 @dataclass(frozen=True)
 class ChatDeps:
     user_id: str
     thread_id: str
+    summaries: str = ""  # summary block of turns before the replayed window
 
 
 @cache
@@ -24,7 +25,8 @@ def get_agent() -> Agent[ChatDeps, str]:
     """Build the chat agent once. Tests swap the model with `get_agent().override(model=...)`.
 
     Instruction order matters for prompt caching: the static system prompt first, then the
-    profile (changes only when a fact changes). Recent turns follow as message history.
+    profile (changes only when a fact changes), then summaries (change every chunk). Recent turns
+    follow as message history; retrieved snippets ride in the current user message.
     """
     agent = Agent(
         build_model(get_settings()),
@@ -35,6 +37,16 @@ def get_agent() -> Agent[ChatDeps, str]:
     @agent.instructions
     def profile(ctx: RunContext[ChatDeps]) -> str:
         return facts.render_profile(ctx.deps.user_id, ctx.deps.thread_id)
+
+    @agent.instructions
+    def summaries(ctx: RunContext[ChatDeps]) -> str:
+        return ctx.deps.summaries
+
+    @agent.tool
+    def search_history(ctx: RunContext[ChatDeps], query: str) -> str:
+        """Search earlier messages of this conversation by keywords or meaning. Use it when the
+        answer may be in an older part of the conversation not shown to you."""
+        return retrieve.snippets(ctx.deps.thread_id, query) or "No matching earlier messages."
 
     return agent
 

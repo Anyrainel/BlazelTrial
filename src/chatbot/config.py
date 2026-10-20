@@ -51,6 +51,20 @@ class Settings(BaseSettings):
     extract_message_chars: int = 2000
     extract_known_chars: int = 6000
 
+    # Retrieval over past messages: keyword (FTS5) + embeddings (sqlite-vec), fused by rank.
+    embedding_backend: Literal["fastembed", "hash"] = "fastembed"  # hash = offline/tests
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    retrieval_top_k: int = 6
+    retrieval_token_budget: int = 1500
+    retrieval_snippet_chars: int = 600
+    # Cosine distance cut-off for vector hits (bge-small: unrelated text sits around 0.4-0.6).
+    retrieval_max_distance: float = 0.35
+
+    # Rolling summaries of turns that have scrolled out of the replayed window.
+    summary_chunk_turns: int = 25
+    summary_keep_recent_turns: int = 16  # never summarize the newest N turns
+    summaries_in_context: int = 3
+
     default_user_id: str = "me"
     state_dir: Path = Path(".state")
 
@@ -62,6 +76,10 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.state_path / "state.db"
+
+    @property
+    def models_path(self) -> Path:
+        return self.state_path / "models"
 
     @property
     def llm_log_path(self) -> Path:
