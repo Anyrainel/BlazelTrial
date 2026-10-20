@@ -1,0 +1,95 @@
+# AGENTS.md
+
+Shared instructions for **Claude Code and Codex**. Keep this file short; details live in the
+linked docs. Spec: [docs/PROBLEM.md](docs/PROBLEM.md) (source of truth: `assignment.md`).
+Stack rationale: [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## What this is
+A single-user chatbot with one core, `send(user_id, thread_id, text) -> reply`, served to a
+CLI / HTTP / web main chat (many parallel sessions) and a Slack DM (`thread_id="slack-dm"`, one
+endless thread). The hard part is **memory + context under an 8k input-token budget**, not the UI.
+
+## Stack
+Python 3.13 · uv · PydanticAI (models: Claude Sonnet 5.5 default, Meta Muse Spark 1.3
+Contributor, local Bonsai 2 for testing) · SQLModel on SQLite (+ FTS5, sqlite-vec,
+fastembed) · FastAPI · Slack Bolt (Socket Mode) · pytest · ruff ·
+web: React + Vite + TypeScript + assistant-ui (npm).
+
+## Layout
+```
+src/chatbot/
+  core.py            # send(): the ONLY entry point for every surface
+  config.py          # pydantic-settings; all paths/limits from .env
+  agent/             # PydanticAI agent, model factory, budget + logging hooks, history processors
+  memory/            # SQLModel tables, fact extraction, summaries, hybrid search, forget
+  capabilities/      # one module per capability (+ instructions.md), registry
+  docs_reader/       # chunked reading of large docs, persisted doc notes
+  surfaces/          # cli.py, http.py (FastAPI, serves web/dist), slack_app.py
+  prompts/           # prompt text files
+web/                 # assistant-ui frontend
+scenarios/           # scenario runner (PASS/FAIL) + fixture generators
+scripts/             # gen_docs.py etc.
+tests/               # offline unit tests (PydanticAI TestModel/FunctionModel)
+.state/              # runtime only, gitignored: state.db, docs/, logs/, models/
+```
+
+## Commands
+```bash
+uv sync                                    # install Python deps
+uv run python scripts/gen_docs.py          # generate .state/docs corpus (incl. Q3-plan)
+uv run chatbot chat --thread s1            # interactive CLI session
+uv run chatbot send USER THREAD "text"     # one-shot call to the core
+uv run chatbot serve                       # FastAPI: POST /send, web UI at /
+uv run chatbot slack                       # Slack app (Socket Mode)
+uv run python -m scenarios                 # scenario script, prints PASS/FAIL
+uv run pytest -q                           # unit tests, offline
+uv run ruff check . && uv run ruff format .
+cd web && npm install && npm run dev       # frontend dev (proxies to :8000); npm run build → web/dist
+```
+Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | local`, plus
+`LLM_MODEL`, `ANTHROPIC_API_KEY`, `META_API_KEY`, `LOCAL_BASE_URL`, `MAX_INPUT_TOKENS=8000`,
+`STATE_DIR=.state`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`. Never hard-code a model id in code.
+
+## Non-negotiable invariants
+1. **One code path.** Surfaces are thin adapters over `core.send()`. Seeding history
+   (scenario 2) also goes through `send()`; an ingest flag may skip the LLM reply, nothing else.
+2. **Budget is enforced per request.** Every model request runs with
+   `per_request_input_tokens_limit=MAX_INPUT_TOKENS` and a pre-send count (provider endpoint, or
+   local estimate + margin when unavailable). The logged/enforced number is
+   `input + cache_read + cache_creation` from the provider usage field. One JSON line per request
+   to `.state/logs/llm_calls.jsonl`. Never construct a model outside `agent/models.py`.
+3. **Prompt order for cache hits:** stable first (system, tool defs, user profile), volatile last
+   (retrieved memories, recent turns). Compact only when `prompt_cache_outlook()` is cold or the
+   budget forces it; compact in chunks so the prefix stays stable between compactions.
+4. **History integrity.** History processors never split a tool call from its return.
+5. **Memory scopes are explicit:** `user` (cross-thread) · `thread` (this session) ·
+   `ephemeral` (this draft only). "For this draft only" / "in this chat" never becomes `user`.
+6. **Supersede, don't overwrite.** Changed preferences get a new version; the old one is marked
+   superseded with a timestamp, so "what did I say before?" is answerable.
+7. **Forget is a hard delete everywhere:** messages, facts, summaries, FTS + vector rows,
+   doc notes, stored tool-call args, serialized PydanticAI histories. Test greps the DB file
+   (after `VACUUM`) for the forgotten value.
+8. **Large inputs are never inlined.** Tools return bounded output; docs > budget are read in
+   chunks and distilled into a persisted doc note (keep key facts like dates verbatim).
+9. **Capabilities are plugins:** name, one-line description, schema, `instructions.md`, handler.
+   Only descriptions are always in context; instructions load on demand. Hard output rules
+   (LinkedIn: ≤1300 chars, ≤3 hashtags all at end, no links) are **validated in code** and
+   repaired/retried, never trusted to the model.
+10. **Generalise.** Evaluators run variations. Never special-case scenario wording, names,
+    doc ids or turn numbers in `src/`.
+
+## Conventions
+- Type hints everywhere; small functions. SQLModel for tables; raw SQL only in
+  `memory/search.py` (FTS5/vec virtual tables).
+- Prompts are files in `src/chatbot/prompts/`, not inline strings.
+- Unit tests never hit the network (use PydanticAI `TestModel`/`FunctionModel`). Scenarios use real LLMs.
+- Frontend talks only to the HTTP API; no business logic in `web/`.
+
+## Workflow rules
+- Read `docs/PROBLEM.md`, `docs/DECISIONS.md` and `NOTES.md` before non-trivial work.
+- **Commit early and often**, small focused commits. Never rewrite history.
+- Unclear requirement → reasonable assumption → append to `NOTES.md` → keep going.
+- New/changed stack decision → add a row to `docs/DECISIONS.md`.
+- Log AI mistakes you catch and suggestions you reject in `NOTES.md` (it's a deliverable).
+- Never commit secrets, `.env`, `.state/`, `web/node_modules`, or AI transcripts.
+- Done = `pytest` green + relevant scenario PASS + no budget violation in the call log.

@@ -1,0 +1,19 @@
+# Decisions
+
+Short decision log. Newest at the bottom. Status: **Accepted** unless marked otherwise.
+
+| # | Area | Decision | Why | Rejected |
+|---|---|---|---|---|
+| D1 | Hosting | **Local only.** No cloud deploy. | Assignment requires state in SQLite/files inside the repo dir; scale-to-zero clouds have ephemeral disks. | Fly.io (volume + auto-stop), Lambda/Cloud Run + serverless DB. |
+| D2 | Runtime state | All runtime data in **`.state/`** (gitignored): `state.db`, `docs/` corpus, `logs/`, `models/`. Paths configurable. | User data and user docs are not source code. | Committing `docs/` corpus or DB. |
+| D3 | Language / toolchain | **Python 3.13 + uv** (lockfile). | Reproducible grader installs. | pip+venv; 3.12. Risk: verify onnxruntime/sqlite-vec wheels on 3.13/Windows at scaffold time. |
+| D4 | Agent framework | **PydanticAI.** | Per-request budget (`UsageLimits(per_request_input_tokens_limit, count_tokens_before_request=True)`), `ProcessHistory`/`before_model_request` hooks for compaction that keep tool call/return pairs intact, `prompt_cache_outlook()`, deferred tools/`load_capability` for lazy capability instructions. | Hand-rolled loop (more code, we'd re-implement history integrity); LangGraph (heavy, opaque prompts). |
+| D5 | LLM providers | **Claude + Meta + local** behind a thin model factory + our budget/logging hooks. Claude via `anthropic`; Meta and local via PydanticAI's OpenAI-compatible provider. | Swap providers by config. | LiteLLM; OpenAI-compat only. |
+| D5a | Models | **Claude Sonnet 5.5** (`claude-sonnet-5-5`, default) · **Meta Muse Spark 1.3 Contributor** (via Meta's API) · **Bonsai 2** hosted locally for offline/cheap testing, through an OpenAI-compatible local server. All chosen by `LLM_PROVIDER` + `LLM_MODEL`. | One code path for every model. A local model lets us iterate without paying per call. | Hard-coded model names. Model IDs for Muse Spark and Bonsai 2 to confirm when keys/servers are set up (NOTES R3). |
+| D6 | Budget accounting | Enforced number = `input_tokens + cache_read + cache_creation` (provider-reported). Pre-send count via provider endpoint where available; else local estimate with safety margin. | Anthropic's `input_tokens` excludes cached tokens; we report the defensible number. | Counting `input_tokens` alone. |
+| D7 | Retrieval | **Hybrid: SQLite FTS5 + sqlite-vec with local `fastembed` embeddings.** | Robust to paraphrased evaluator variations; no extra API key. | FTS5 only; API embeddings. **Status: Revisit after prototype** (measure whether embeddings earn their weight). |
+| D8 | Persistence | **SQLModel** for tables; raw SQL confined to `memory/search.py` for FTS5/vec virtual tables. | Typed models alongside PydanticAI/pydantic. | stdlib sqlite3 raw; SQLAlchemy Core. |
+| D9 | Main chat surfaces | **CLI + HTTP API + styled web page.** Overrides the brief's "no styling" (allowed, not required). | Better demo; graders can use CLI or HTTP. | CLI only; unstyled page. |
+| D10 | Web UI | **assistant-ui (React) + Vite + TypeScript**, talking to our FastAPI. FastAPI serves the built `web/dist`. | Polished open-source chat components incl. thread list for parallel sessions. | htmx+Pico, Chainlit, Gradio. Cost: Node toolchain. |
+| D11 | Slack | **Bolt for Python, Socket Mode.** | No public URL/tunnel needed locally. | Events API + ngrok. |
+| D12 | Quality tooling | pytest, ruff, pydantic-settings (`.env`). | Standard, light. | — |
