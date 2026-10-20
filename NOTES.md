@@ -8,7 +8,8 @@
   inside the repo dir (satisfies "SQLite or files inside the repo directory"; keeps user data out
   of git). `fetch_doc` reads `.state/docs/`; graders generate it with `scripts/gen_docs.py`.
 - A3. "Styled" web UI is allowed even though the brief says no styling is needed.
-- A4. Budget number = provider-reported `input + cache_read + cache_creation` tokens.
+- A4. Budget number = provider-reported input tokens including cache reads/writes
+  (PydanticAI's normalized `RequestUsage.input_tokens`).
 
 ## To revisit
 - R1. Hybrid retrieval (FTS5 + local embeddings): measure after prototype whether embeddings
@@ -29,3 +30,4 @@
 | Date | Hours | What |
 |---|---|---|
 | 2026-10-19 | | Spec, AGENTS.md, stack decisions |
+| 2026-10-19 | | M1: uv project, config, model factory, budget guard + call log, CLI |
