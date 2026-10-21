@@ -254,36 +254,50 @@ def test_reindex_repairs_messages_missing_from_indexes():
     assert search.reindex_missing()["message_fts"] == 0  # idempotent
 
 
+def legacy_fact(scope, key: str, text: str, turn: int) -> None:
+    """Write a legacy Fact row the way the old extractor did (supersede by scope + key)."""
+    from chatbot.memory.models import Fact, FactKind, Scope, utcnow
+
+    with session() as s:
+        thread = "A" if scope == Scope.THREAD else None
+        current = s.exec(
+            Fact.__table__.select().where(
+                Fact.key == key, Fact.scope == scope, Fact.superseded_at.is_(None)
+            )
+        ).first()
+        new = Fact(
+            user_id="me",
+            scope=scope,
+            thread_id=thread,
+            key=key,
+            text=text,
+            kind=FactKind.PREFERENCE,
+            source_thread_id="A",
+            source_turn=turn,
+        )
+        s.add(new)
+        s.flush()
+        if current is not None:
+            old = s.get(Fact, current.id)
+            old.superseded_at, old.superseded_by = utcnow(), new.id
+            s.add(old)
+        s.commit()
+
+
 def test_fact_migration_is_incremental_and_keeps_chains():
-    from chatbot.memory import facts
-    from chatbot.memory.models import FactKind, Scope
+    from chatbot.memory.models import Scope
 
     say(A, "Always use British spelling.")
     turn = store.thread_messages("A")[-1].turn
-    facts.apply(
-        "me",
-        "A",
-        turn,
-        [facts.NewFact(Scope.USER, "spelling", "Use British spelling.", FactKind.PREFERENCE)],
-    )
-    facts.apply(
-        "me",
-        "A",
-        turn,
-        [facts.NewFact(Scope.THREAD, "tone", "Be terse here.", FactKind.PREFERENCE)],
-    )
+    legacy_fact(Scope.USER, "spelling", "Use British spelling.", turn)
+    legacy_fact(Scope.THREAD, "tone", "Be terse here.", turn)
     first = migrate_facts()
     assert first == {"migrated": 2, "without_source": 0, "chains_linked": 0}
     assert migrate_facts()["migrated"] == 0  # idempotent
 
     say(A, "Switch to American spelling.")
     turn2 = store.thread_messages("A")[-1].turn
-    facts.apply(
-        "me",
-        "A",
-        turn2,
-        [facts.NewFact(Scope.USER, "spelling", "Use American spelling.", FactKind.PREFERENCE)],
-    )
+    legacy_fact(Scope.USER, "spelling", "Use American spelling.", turn2)
     second = migrate_facts()
     assert second == {"migrated": 1, "without_source": 0, "chains_linked": 1}
 

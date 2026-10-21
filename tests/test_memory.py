@@ -137,7 +137,7 @@ def test_stored_runs_drop_instructions_and_replay_shrinks_tool_output():
         nonlocal calls
         calls += 1
         if calls == 1:
-            return ModelResponse(parts=[ToolCallPart("search_history", {"query": "anything"})])
+            return ModelResponse(parts=[ToolCallPart("ask_memory", {"question": "anything"})])
         return ModelResponse(parts=[TextPart("ok")])
 
     long_text = "Larkspur " * 300
@@ -166,13 +166,14 @@ def test_tool_output_growth_drops_oldest_turns_not_the_current_one(monkeypatch):
     def fn(messages, info: AgentInfo) -> ModelResponse:
         seen.append(list(messages))  # copy: the history list is mutated in place between requests
         if len(seen) == 1:
-            return ModelResponse(parts=[ToolCallPart("search_history", {"query": "old"})])
+            return ModelResponse(parts=[ToolCallPart("ask_memory", {"question": "old"})])
         return ModelResponse(parts=[TextPart("ok")])
 
     monkeypatch.setenv("TOKEN_COUNT_MODE", "estimate")  # fake models can't count tokens
     get_settings.cache_clear()
     monkeypatch.setattr(
-        "chatbot.memory.retrieve.snippets", lambda *a, **k: "big tool output " + "w" * 3600
+        "chatbot.capabilities.memory.subagent.render",
+        lambda answer: "big tool output " + "w" * 3600,
     )
     with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
         core.send("me", "A", "find it")

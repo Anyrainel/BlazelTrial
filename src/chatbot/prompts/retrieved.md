@@ -1,5 +1,0 @@
-{sections}
-
----
-Current message:
-{message}

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from pydantic_ai import RunContext
-from sqlmodel import col, select
+from sqlmodel import select
 
 from chatbot.capabilities.registry import capability
 from chatbot.config import get_settings
@@ -26,24 +26,6 @@ def remember_ref(thread_id: str, doc_id: str) -> None:
         ref.last_used_at = datetime.now(UTC)
         s.add(ref)
         s.commit()
-
-
-def refs_block(thread_id: str, limit: int = 5) -> str:
-    """Documents opened in this conversation (resolves "that plan" long after it scrolled away)."""
-    with session() as s:
-        refs = s.exec(
-            select(DocRef)
-            .where(DocRef.thread_id == thread_id)
-            .order_by(col(DocRef.last_used_at).desc())
-            .limit(limit)
-        ).all()
-    if not refs:
-        return ""
-    lines = [f"- {r.doc_id} (last opened {r.last_used_at:%Y-%m-%d})" for r in refs]
-    return (
-        "## Documents opened in this conversation (use fetch_doc / search_doc to consult them)\n"
-        + "\n".join(lines)
-    )
 
 
 async def fetch_doc(ctx: RunContext, doc_id: str) -> str:

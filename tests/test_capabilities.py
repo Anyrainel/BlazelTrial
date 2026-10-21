@@ -163,16 +163,7 @@ def test_writer_gets_one_retry_with_the_overrun():
     assert BODY_LIMIT < 1300
 
 
-def test_writer_sees_the_users_standing_instructions():
-    from chatbot.memory import facts
-    from chatbot.memory.models import FactKind, Scope
-
-    facts.apply(
-        "me",
-        "A",
-        1,
-        [facts.NewFact(Scope.USER, "spelling", "Use British spelling.", FactKind.PREFERENCE)],
-    )
+def test_writer_gets_preferences_through_the_brief():
     prompts: list[str] = []
 
     def fn(messages, info):
@@ -182,9 +173,10 @@ def test_writer_sees_the_users_standing_instructions():
         )
 
     settings = get_settings()
+    brief = {"brief": "Launch post. Writing preferences: use British spelling."}
     with (
         get_agent().override(
-            model=build_model(settings, raw=chat_calling("write_linkedin_post", {"brief": "b"}))
+            model=build_model(settings, raw=chat_calling("write_linkedin_post", brief))
         ),
         get_writer().override(model=build_model(settings, raw=FunctionModel(fn))),
     ):

@@ -3,13 +3,13 @@ from pydantic_ai import models
 
 from chatbot.agent.agent import get_agent
 from chatbot.capabilities.linkedin import get_writer
+from chatbot.capabilities.memory.subagent import get_search_agent
 from chatbot.config import Settings, get_settings
 from chatbot.docs_reader.reader import get_mapper, get_reducer
 from chatbot.memory.db import get_engine
 from chatbot.memory.embeddings import get_embedder
-from chatbot.memory.extract import get_extractor
+from chatbot.memory.notes import get_note_writer
 from chatbot.memory.search import _ensure_doc_vec, _ensure_vec, repair_once
-from chatbot.memory.summarize import get_summarizer
 
 # Unit tests must never reach a real provider.
 models.ALLOW_MODEL_REQUESTS = False
@@ -34,9 +34,9 @@ def _clear_caches() -> None:
         get_settings,
         get_agent,
         get_engine,
-        get_extractor,
         get_embedder,
-        get_summarizer,
+        get_note_writer,
+        get_search_agent,
         _ensure_vec,
         _ensure_doc_vec,
         get_mapper,
@@ -49,23 +49,23 @@ def _clear_caches() -> None:
 
 @pytest.fixture(autouse=True)
 def _fake_models(_isolated_env):
-    """Default offline models: chat replies "ok", the extractor remembers nothing, summaries
-    are a fixed string.
+    """Default offline models: chat replies "ok", notes and doc notes are a fixed string,
+    the memory search answers not_found.
     Tests that care override them again (inner overrides win)."""
     from pydantic_ai.models.test import TestModel
 
     from chatbot.agent.models import build_model
-    from tests.fakes import extractor_returning
+    from tests.fakes import search_agent_answering
 
     settings = get_settings()
     chat = build_model(settings, raw=TestModel(custom_output_text="ok", call_tools=[]))
     summary = build_model(settings, raw=TestModel(custom_output_text="summary"))
     with (
         get_agent().override(model=chat),
-        get_summarizer().override(model=summary),
+        get_note_writer().override(model=summary),
         get_mapper().override(model=summary),
         get_reducer().override(model=summary),
-        extractor_returning([]),
+        search_agent_answering({"status": "not_found", "answer": "Nothing found."}),
     ):
         yield
 

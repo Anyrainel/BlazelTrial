@@ -45,23 +45,12 @@ class Settings(BaseSettings):
     # prompt prefix stays cacheable) for several turns before sliding forward.
     history_window_step: int = 8
 
-    # Fact extraction: user messages per extractor call, max chars kept per message, max chars of
-    # already-known facts shown to the extractor (newest kept).
-    extract_batch_turns: int = 10
-    extract_message_chars: int = 2000
-    extract_known_chars: int = 6000
-
-    # Retrieval over past messages: keyword (FTS5) + embeddings (sqlite-vec), fused by rank.
+    # Embeddings (sqlite-vec): optional vector candidates for memory search and doc passages.
     embedding_backend: Literal["fastembed", "hash"] = "fastembed"  # hash = offline/tests
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    retrieval_top_k: int = 6
-    retrieval_token_budget: int = 1500
-    retrieval_snippet_chars: int = 600
     # Cosine distance cut-off for vector hits (bge-small: unrelated text sits around 0.4-0.6).
     retrieval_max_distance: float = 0.35
 
-    # Relevant facts shown with the current message.
-    facts_token_budget: int = 600
     # Chat context is assembled to at most this share of MAX_INPUT_TOKENS (estimate), leaving
     # headroom for estimate error; plus a margin for request framing (tool schemas and
     # capability instructions are measured, not guessed).
@@ -76,10 +65,16 @@ class Settings(BaseSettings):
     doc_search_token_budget: int = 1500
     doc_note_concurrency: int = 6
 
-    # Rolling summaries of turns that have scrolled out of the replayed window.
+    # ask_memory subagent bounds: model requests per question, total tool-output characters
+    # it may read, and the answer size handed back to the main agent.
+    memory_search_max_requests: int = 6
+    memory_search_tool_chars: int = 12000
+    memory_answer_chars: int = 1500
+
+    # Episode notes: fixed segments of this many turns, written once they are this far behind
+    # the newest turn (searchable via ask_memory, never injected).
     summary_chunk_turns: int = 25
-    summary_keep_recent_turns: int = 16  # never summarize the newest N turns
-    summaries_in_context: int = 3
+    summary_keep_recent_turns: int = 16
 
     default_user_id: str = "me"
     state_dir: Path = Path(".state")

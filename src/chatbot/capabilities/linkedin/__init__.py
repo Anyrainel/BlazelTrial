@@ -62,11 +62,10 @@ async def write_linkedin_post(ctx: RunContext, brief: str) -> str:
     the user exactly as returned.
 
     Args:
-        brief: What to announce, the key facts/dates verbatim, audience and requested tone.
+        brief: What to announce, the key facts/dates verbatim, audience, requested tone, and
+            the user's current writing preferences (spelling, tone) from ask_memory.
     """
     prompt = f"Brief:\n{brief[:_BRIEF_CHARS]}"
-    if prefs := getattr(ctx.deps, "preferences", ""):
-        prompt += f"\n\nThe user's standing instructions:\n{prefs}"
     seen: dict = {}
     try:
         with call_context(purpose="linkedin"):

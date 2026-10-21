@@ -5,7 +5,7 @@ import atexit
 import contextvars
 import logging
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime
 
 from pydantic_ai.messages import (
@@ -17,15 +17,12 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestParameters
 
-from chatbot import prompts
 from chatbot.agent.agent import ChatDeps, get_agent, reply_text, static_prompt_tokens
 from chatbot.agent.budget import BudgetExceededError, call_context, estimate_tokens
-from chatbot.capabilities import docs as doc_tools
 from chatbot.config import get_settings
-from chatbot.memory import facts, retrieve, search, summarize
 from chatbot.memory import messages as store
+from chatbot.memory import notes, refs, search
 from chatbot.memory.db import get_engine
-from chatbot.memory.extract import extract_pending
 from chatbot.memory.models import Source
 
 SLACK_THREAD_ID = store.SLACK_THREAD_ID
@@ -33,36 +30,26 @@ logger = logging.getLogger(__name__)
 _RETRY_SCALES = (1.0, 0.6, 0.35)
 
 
-def _user_prompt(prompt: str, window: store.HistoryWindow) -> str | list:
+def _user_prompt(text: str, window: store.HistoryWindow) -> str | list:
     """The run's user prompt, with a cache breakpoint before it when there is history.
 
     `CachePoint()` first attaches `cache_control` to the end of the previous message, so
     tools + instructions + replayed history are cached and the next turn (whose history extends
-    this one) reads them back. The current message itself (with its retrieved facts/snippets)
-    never recurs, so it is deliberately left outside the cache. Without history there is nothing
-    to attach to; the instructions breakpoint covers that case.
+    this one) reads them back. Without history there is nothing to attach to; the instructions
+    breakpoint covers that case.
     """
-    return [CachePoint(), prompt] if window.messages else prompt
+    return [CachePoint(), text] if window.messages else text
 
 
-def _restore_user_text(messages: list[ModelMessage], sent: str, original: str) -> list:
-    """Store the run with what the user typed in place of the augmented prompt (and without the
-    cache marker), so stored history holds no retrieved snippets (smaller; forget stays simple).
-
-    Instructions are dropped too: they are rebuilt every turn and only the latest are sent, so a
-    stored copy would only waste space and keep preferences/summaries in more places."""
-
-    def is_sent(content) -> bool:
-        if isinstance(content, list):
-            return sent in content
-        return content == sent
-
+def _for_storage(messages: list[ModelMessage], text: str) -> list:
+    """The run as stored for replay: the plain user text (no cache marker) and no instructions
+    (rebuilt every turn; only the latest are ever sent)."""
     out = []
     for m in messages:
         if isinstance(m, ModelRequest):
             parts = [
-                replace(p, content=original)
-                if isinstance(p, UserPromptPart) and is_sent(p.content)
+                replace(p, content=text)
+                if isinstance(p, UserPromptPart) and isinstance(p.content, list)
                 else p
                 for p in m.parts
             ]
@@ -71,107 +58,69 @@ def _restore_user_text(messages: list[ModelMessage], sent: str, original: str) -
     return out
 
 
-async def _upkeep(user_id: str, thread_id: str, *, force: bool) -> None:
-    """Memory maintenance after a turn: fact extraction and rolling summaries.
+async def _upkeep(thread_id: str) -> None:
+    """Memory maintenance after a turn: source-linked episode notes for settled segments.
 
-    Failures are logged, never raised: the user's reply must not be lost over upkeep, and
-    pending work is retried on the next turn.
+    The same path serves live and ingested history. Failures are logged, never raised (the
+    reply must not be lost over upkeep); pending segments are retried on the next turn.
     """
-    settings = get_settings()
-    if force or store.count_pending_extraction(thread_id) >= settings.extract_batch_turns:
-        try:
-            await extract_pending(user_id, thread_id)
-        except Exception:
-            logger.exception("fact extraction failed for %s", thread_id)
     try:
-        await summarize.summarize_pending(thread_id)
+        await notes.write_pending(thread_id)
     except Exception:
-        logger.exception("summarization failed for %s", thread_id)
+        logger.exception("note maintenance failed for %s", thread_id)
 
 
-@dataclass
-class _Context:
-    preferences: str
-    summaries: str
-    facts: str
-    snippets: str
-    history_budget: int
+def _window(thread_id: str, turn: int, scale: float) -> store.HistoryWindow:
+    """Recent turns before `turn`, shrunk until the estimated request fits the target.
 
-
-def _render_prompt(text: str, ctx: _Context) -> str:
-    sections = []
-    if ctx.facts:
-        sections.append(prompts.load("facts_header") + "\n" + ctx.facts)
-    if ctx.snippets:
-        sections.append(prompts.load("snippets_header") + "\n" + ctx.snippets)
-    if not sections:
-        return text
-    return (
-        prompts.load("retrieved")
-        .replace("{sections}", "\n\n".join(sections))
-        .replace("{message}", text)
-    )
-
-
-def _assemble(user_id: str, thread_id: str, text: str, scale: float = 1.0):
-    """Build prompt, history window and deps for a chat turn, shrinking until the estimate fits.
-
-    Each source has its own budget, so this normally fits first time; the loop is a safety net
-    (e.g. a huge pasted message) that degrades context instead of failing the turn. The budget
-    guard on the model still has the final say.
+    No memory is injected: facts, preferences, notes and older messages are reached through
+    the memory tools. The loop is a safety net (e.g. a huge pasted message); the budget guard on
+    the model still has the final say.
     """
     settings = get_settings()
     cpt = settings.estimate_chars_per_token
     target = int(settings.context_target_tokens * scale)
-    system_tokens = static_prompt_tokens() + settings.tool_overhead_tokens
-
-    def window_for(budget: int):
-        return store.recent_history(
-            thread_id, budget=budget, step=settings.history_window_step, chars_per_token=cpt
+    fixed = static_prompt_tokens() + settings.tool_overhead_tokens
+    budget = settings.history_token_budget
+    while True:
+        window = store.recent_history(
+            thread_id,
+            budget=budget,
+            step=settings.history_window_step,
+            chars_per_token=cpt,
+            before_turn=turn,
         )
+        used = fixed + estimate_tokens(window.messages, ModelRequestParameters(), cpt)
+        if used <= target or budget == 0:
+            return window
+        logger.warning("history over target (%d > %d) in %s; shrinking", used, target, thread_id)
+        budget = budget // 2 if budget > 200 else 0
 
-    ctx = _Context(
-        preferences=facts.render_preferences(user_id, thread_id),
-        summaries="",
-        facts=facts.render_relevant_facts(
-            user_id, thread_id, text, int(settings.facts_token_budget * cpt)
-        ),
-        snippets="",
-        history_budget=settings.history_token_budget,
-    )
-    window = window_for(ctx.history_budget)
-    ctx.summaries = summarize.context_block(thread_id, before_turn=window.start_turn)
-    ctx.snippets = retrieve.snippets(thread_id, text, before_turn=window.start_turn)
 
-    def estimate() -> int:
-        strings = ctx.preferences + ctx.summaries + _render_prompt(text, ctx)
-        history = estimate_tokens(window.messages, ModelRequestParameters(), cpt)
-        return int(system_tokens + len(strings) / cpt + history)
-
-    shrink_steps = [
-        lambda: setattr(ctx, "snippets", ""),
-        lambda: setattr(ctx, "summaries", ""),
-        lambda: setattr(ctx, "history_budget", ctx.history_budget // 2),
-        lambda: setattr(ctx, "facts", ""),
-        lambda: setattr(ctx, "history_budget", 0),
-    ]
-    for step in shrink_steps:
-        if estimate() <= target:
+async def _reply(user_id: str, thread_id: str, user_msg) -> tuple[str, str]:
+    """Run the chat agent for a stored user message; returns (reply, run JSON)."""
+    deps = None
+    for scale in _RETRY_SCALES:
+        window = _window(thread_id, user_msg.turn, scale)
+        deps = ChatDeps(user_id, thread_id, current_msg_ref=refs.msg(user_msg.id))
+        try:
+            with call_context(thread_id=thread_id, purpose="chat"):
+                result = await get_agent().run(
+                    _user_prompt(user_msg.text, window),
+                    message_history=window.messages,
+                    deps=deps,
+                )
             break
-        logger.warning(
-            "context over target (%d > %d) in %s; shrinking", estimate(), target, thread_id
-        )
-        step()
-        window = window_for(ctx.history_budget)
-
-    deps = ChatDeps(
-        user_id,
-        thread_id,
-        preferences=ctx.preferences,
-        summaries=ctx.summaries,
-        docs=doc_tools.refs_block(thread_id),
-    )
-    return _render_prompt(text, ctx), window, deps
+        except BudgetExceededError as exc:
+            # Our estimate can't know each provider's real count, so if the guard refuses a
+            # request before sending, retry with less history.
+            if exc.stage != "preflight" or scale == _RETRY_SCALES[-1]:
+                raise
+            logger.warning("chat context refused (%s); retrying smaller", exc)
+    # A tool may fix the reply (e.g. a validated LinkedIn post) so the model can't alter it.
+    reply = deps.outputs.get("reply") or reply_text(result)
+    stored = _for_storage(result.new_messages(), user_msg.text)
+    return reply, ModelMessagesTypeAdapter.dump_json(stored).decode()
 
 
 async def _handle(
@@ -183,51 +132,28 @@ async def _handle(
     reply: str | None = None,
     at: datetime | None = None,
 ) -> str | None:
-    """One pipeline for live and ingested messages; ingest only skips the model reply."""
+    """One pipeline for live and ingested messages; ingest only skips the model reply.
+
+    The user message is stored (and indexed) before the model runs, so memory writes during
+    the turn can cite it as their source.
+    """
     search.repair_once(get_engine())  # heal index rows lost to a crash after a message commit
     store.ensure_thread(user_id, thread_id)
-
-    run_json = None
-    if generate:
-        # Our estimate can't know each provider's real count (Meta's overcounts ~2x), so if
-        # the budget guard refuses a request before sending, rebuild a smaller context.
-        for scale in _RETRY_SCALES:
-            prompt, window, deps = _assemble(user_id, thread_id, text, scale)
-            try:
-                with call_context(thread_id=thread_id, purpose="chat"):
-                    result = await get_agent().run(
-                        _user_prompt(prompt, window), message_history=window.messages, deps=deps
-                    )
-                break
-            except BudgetExceededError as exc:
-                if exc.stage != "preflight" or scale == _RETRY_SCALES[-1]:
-                    raise
-                logger.warning("chat context refused (%s); retrying smaller", exc)
-        # A tool may fix the reply (e.g. a validated LinkedIn post) so the model can't alter it.
-        reply = deps.outputs.get("reply") or reply_text(result)
-        stored = _restore_user_text(result.new_messages(), prompt, text)
-        run_json = ModelMessagesTypeAdapter.dump_json(stored).decode()
-
+    source = Source.LIVE if generate else Source.INGEST
     rows = store.record_turn(
-        user_id,
-        thread_id,
-        text,
-        reply,
-        run_messages_json=run_json,
-        source=Source.LIVE if generate else Source.INGEST,
-        at=at,
+        user_id, thread_id, text, None if generate else reply, source=source, at=at
     )
     search.index(rows)
-
-    # Upkeep runs before returning, so the next message in any thread sees new facts. Live
-    # turns extract immediately; ingest batches its backlog to limit extractor calls.
-    await _upkeep(user_id, thread_id, force=generate)
+    if generate:
+        reply, run_json = await _reply(user_id, thread_id, rows[0])
+        search.index([store.add_reply(rows[0], reply, run_messages_json=run_json)])
+    await _upkeep(thread_id)
     return reply
 
 
 async def flush_async(user_id: str, thread_id: str) -> None:
-    """Finish pending upkeep for a thread (e.g. extraction left over after an ingest)."""
-    await _upkeep(user_id, thread_id, force=True)
+    """Finish pending maintenance for a thread (e.g. notes left over after an ingest)."""
+    await _upkeep(thread_id)
 
 
 async def send_async(user_id: str, thread_id: str, text: str) -> str:

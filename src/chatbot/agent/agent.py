@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from functools import cache
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -14,16 +14,15 @@ from chatbot.agent.history import fit_history
 from chatbot.agent.models import build_model
 from chatbot.capabilities import registry
 from chatbot.config import get_settings
-from chatbot.memory import retrieve
 
 
 @dataclass(frozen=True)
 class ChatDeps:
+    """Trusted per-run context. Tools read identity from here, never from model arguments."""
+
     user_id: str
     thread_id: str
-    preferences: str = ""  # standing instructions (stable, cacheable)
-    summaries: str = ""  # summary block of turns before the replayed window
-    docs: str = ""  # documents opened in this thread
+    current_msg_ref: str | None = None  # the user message being answered (citable source)
     # Set by tools during the run: a reply that must reach the user verbatim (e.g. a validated
     # LinkedIn post), replacing the model's own wording. Mutable on purpose.
     outputs: dict = field(default_factory=dict)
@@ -33,10 +32,9 @@ class ChatDeps:
 def get_agent() -> Agent[ChatDeps, str]:
     """Build the chat agent once. Tests swap the model with `get_agent().override(model=...)`.
 
-    Instruction order matters for prompt caching: the static system prompt and capability
-    instructions first, then standing
-    preferences (change rarely), then summaries (change every chunk). Recent turns follow as
-    message history; relevant facts and retrieved snippets ride in the current user message.
+    Instructions are static (system prompt + capability instructions), so they stay cached.
+    Nothing about the user is injected: memory is reached through the memory capability's
+    tools. Recent turns follow as message history.
     """
     agent = Agent(
         build_model(get_settings()),
@@ -44,32 +42,10 @@ def get_agent() -> Agent[ChatDeps, str]:
         instructions=[prompts.load("system"), registry.instructions_block()],
         capabilities=[ProcessHistory(fit_history)],
         # Explicit breakpoints instead of automatic caching: one after tools + instructions,
-        # one before the current message (see core._user_prompt). Automatic caching would also
-        # write the volatile current message to cache on every call, which is never read back.
-        # Other providers ignore these keys.
+        # one before the current message (see core._user_prompt). Other providers ignore these.
         model_settings={"anthropic_cache": False, "anthropic_cache_instructions": True},
     )
-
-    @agent.instructions
-    def preferences(ctx: RunContext[ChatDeps]) -> str:
-        return ctx.deps.preferences
-
-    @agent.instructions
-    def summaries(ctx: RunContext[ChatDeps]) -> str:
-        return ctx.deps.summaries
-
-    @agent.instructions
-    def docs(ctx: RunContext[ChatDeps]) -> str:
-        return ctx.deps.docs
-
     registry.register_all(agent)
-
-    @agent.tool
-    def search_history(ctx: RunContext[ChatDeps], query: str) -> str:
-        """Search earlier messages of this conversation by keywords or meaning. Use it when the
-        answer may be in an older part of the conversation not shown to you."""
-        return retrieve.snippets(ctx.deps.thread_id, query) or "No matching earlier messages."
-
     return agent
 
 

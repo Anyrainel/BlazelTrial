@@ -109,27 +109,6 @@ def test_search_doc_finds_the_launch_passage(docs):
     assert len(seen[0]) <= get_settings().doc_search_token_budget * 3 + 200
 
 
-def test_opened_docs_are_listed_in_later_turns(docs):
-    seen: list[str] = []
-    chat = build_model(
-        get_settings(),
-        raw=tool_then_answer("search_doc", {"doc_id": "Q3-plan", "query": "budget"}, seen),
-    )
-    with get_agent().override(model=chat):
-        core.send("me", "slack-dm", "What's the budget in the Q3 plan?")
-
-    instructions: list[str] = []
-
-    def fn(messages, info):
-        instructions.append(messages[-1].instructions or "")
-        return ModelResponse(parts=[TextPart("ok")])
-
-    with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
-        core.send("me", "slack-dm", "And the launch date in that plan?")
-    assert "Documents opened in this conversation" in instructions[0]
-    assert "- Q3-plan" in instructions[0]
-
-
 def test_unknown_doc_lists_what_exists(docs):
     from chatbot.capabilities.docs import _unknown
 

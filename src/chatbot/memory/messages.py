@@ -76,6 +76,23 @@ def record_turn(
         return rows
 
 
+def add_reply(user_message: Message, reply_text: str, *, run_messages_json: str | None) -> Message:
+    """Store the assistant reply for a user message stored earlier in the same turn."""
+    with session() as s:
+        row = Message(
+            thread_id=user_message.thread_id,
+            user_id=user_message.user_id,
+            turn=user_message.turn,
+            role=Role.ASSISTANT,
+            text=reply_text,
+            source=user_message.source,
+            run_messages_json=run_messages_json,
+        )
+        s.add(row)
+        s.commit()
+        return row
+
+
 _REPLAY_TOOL_RETURN_CHARS = 400
 
 
@@ -143,19 +160,32 @@ class HistoryWindow:
 
 
 def recent_history(
-    thread_id: str, *, budget: int, step: int, chars_per_token: float, max_scan: int = 200
+    thread_id: str,
+    *,
+    budget: int,
+    step: int,
+    chars_per_token: float,
+    max_scan: int = 200,
+    before_turn: int | None = None,
 ) -> HistoryWindow:
     """Recent turns of this thread as PydanticAI history, bounded by `budget` tokens.
 
     Whole turns only, so a tool call is never separated from its return.
     """
     with session() as s:
-        last = s.exec(select(func.max(Message.turn)).where(Message.thread_id == thread_id)).one()
+        query = select(func.max(Message.turn)).where(Message.thread_id == thread_id)
+        if before_turn is not None:  # exclude the turn being answered (already stored)
+            query = query.where(Message.turn < before_turn)
+        last = s.exec(query).one()
         if not last:
             return HistoryWindow([], 1)
         rows = s.exec(
             select(Message)
-            .where(Message.thread_id == thread_id, Message.turn > last - max_scan)
+            .where(
+                Message.thread_id == thread_id,
+                Message.turn > last - max_scan,
+                Message.turn <= last,
+            )
             .order_by(col(Message.turn), col(Message.id))
         ).all()
 
@@ -195,53 +225,3 @@ def thread_messages(thread_id: str) -> list[Message]:
                 .order_by(col(Message.turn), col(Message.id))
             ).all()
         )
-
-
-def pending_for_extraction(thread_id: str, *, limit: int) -> list[tuple[Message, str | None]]:
-    """Oldest user messages not yet fact-extracted, each with the assistant reply before it."""
-    with session() as s:
-        users = s.exec(
-            select(Message)
-            .where(
-                Message.thread_id == thread_id,
-                Message.role == Role.USER,
-                col(Message.extracted).is_(False),
-            )
-            .order_by(col(Message.turn))
-            .limit(limit)
-        ).all()
-        if not users:
-            return []
-        prev_turns = [m.turn - 1 for m in users]
-        replies = {
-            r.turn: r.text
-            for r in s.exec(
-                select(Message).where(
-                    Message.thread_id == thread_id,
-                    Message.role == Role.ASSISTANT,
-                    col(Message.turn).in_(prev_turns),
-                )
-            ).all()
-        }
-    return [(m, replies.get(m.turn - 1)) for m in users]
-
-
-def count_pending_extraction(thread_id: str) -> int:
-    with session() as s:
-        return s.exec(
-            select(func.count())
-            .select_from(Message)
-            .where(
-                Message.thread_id == thread_id,
-                Message.role == Role.USER,
-                col(Message.extracted).is_(False),
-            )
-        ).one()
-
-
-def mark_extracted(ids: list[int]) -> None:
-    with session() as s:
-        for msg in s.exec(select(Message).where(col(Message.id).in_(ids))).all():
-            msg.extracted = True
-            s.add(msg)
-        s.commit()
