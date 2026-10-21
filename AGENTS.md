@@ -64,8 +64,11 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
    (retrieved memories, recent turns). Compact only when `prompt_cache_outlook()` is cold or the
    budget forces it; compact in chunks so the prefix stays stable between compactions.
 4. **History integrity.** History processors never split a tool call from its return.
-5. **Memory scopes are explicit:** `user` (cross-thread) · `thread` (this session) ·
-   `ephemeral` (this draft only). "For this draft only" / "in this chat" never becomes `user`.
+5. **Memory design is evolving.** Agents read and write memory through bounded tools;
+   do not automatically inject stored facts, preferences, summaries, or search hits every turn.
+   Session and long-term stores are the current direction; detailed scope/lifetime policies
+   remain open. Preserve acceptance behaviour: shared facts are recallable across sessions,
+   and draft-local instructions do not leak into other sessions.
 6. **Supersede, don't overwrite.** Changed preferences get a new version; the old one is marked
    superseded with a timestamp, so "what did I say before?" is answerable.
 7. **Forget is a hard delete everywhere:** messages, facts, summaries, FTS + vector rows,
@@ -74,7 +77,8 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
 8. **Large inputs are never inlined.** Tools return bounded output; docs > budget are read in
    chunks and distilled into a persisted doc note (keep key facts like dates verbatim).
 9. **Capabilities are plugins:** name, one-line description, schema, `instructions.md`, handler.
-   Only descriptions are always in context; instructions load on demand. Hard output rules
+   Start with all current tool schemas and instructions loaded; measure their token cost.
+   Introduce tool search / dynamic discovery if growth warrants it. Hard output rules
    (LinkedIn: ≤1300 chars, ≤3 hashtags all at end, no links) are **validated in code** and
    repaired/retried, never trusted to the model.
 10. **Generalise.** Evaluators run variations. Never special-case scenario wording, names,

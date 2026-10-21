@@ -32,6 +32,16 @@ sentence with a placeholder; spelling is correct either way.
   (PydanticAI's normalized `RequestUsage.input_tokens`).
 
 ## To revisit
+- R11. 2026-10-20 design review: user chose tool-driven session/long-term memory and deferred
+  detailed scope policy. Existing harness injection/extraction is not this architecture yet.
+  Context shrinking takes priority over estimator tuning; current tools may load upfront.
+- R12. Implementation inspection: extractor assigns all facts in a batch to its last turn;
+  message and index writes commit separately; async requests are not serialized across the
+  memory pipeline. Fact sources need exact message IDs (potentially multiple), and index
+  updates need atomicity or a durable repair path. Forget orchestration is not implemented.
+- R13. Current fit_history drops only older replayed turns; it cannot bound the current run
+  once accumulated tool exchanges alone fill context. Core retries restart the run and can
+  repeat completed tool work. Add checkpoints/result references and mutation idempotency.
 - R1. Hybrid retrieval (FTS5 + local embeddings): measure after prototype whether embeddings
   are needed or FTS5 + query rewriting is enough.
 - R2. ~~Python 3.13 wheels~~ — fastembed 0.9 and sqlite-vec 0.1.9 work on 3.13 / Windows.
