@@ -41,6 +41,8 @@ extraction/summarisation. The tool-first architecture below is the next refactor
 
 ## Memory architecture and contracts (accepted 2026-10-21; implementation pending)
 
+Concrete interfaces, ids, ownership and mutation rules: [docs/MEMORY_CONTRACTS.md](docs/MEMORY_CONTRACTS.md).
+
 ### Durable storage versus active context
 - SQLite persists original messages, versioned document passages, derived summary notes,
   working-state checkpoints and long-term records. Indexes locate records; they do not replace
