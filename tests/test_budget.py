@@ -109,3 +109,17 @@ def test_sync_wrappers_share_one_open_event_loop():
     first = core._run_sync(current_loop())
     second = core._run_sync(current_loop())
     assert first is second and not first.is_closed()
+
+
+def test_estimate_counts_only_the_latest_instructions():
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    from chatbot.agent.budget import estimate_tokens
+
+    big = "x" * 3000
+    one = [ModelRequest(parts=[UserPromptPart("hi")], instructions=big)]
+    many = [ModelRequest(parts=[UserPromptPart("hi")], instructions=big) for _ in range(5)]
+    params = ModelRequestParameters()
+    single = estimate_tokens(one, params, 3.0)
+    assert estimate_tokens(many, params, 3.0) < single + 5 * 20  # not 5x the instructions

@@ -41,9 +41,10 @@ sentence with a placeholder; spelling is correct either way.
 - R6. ~~Profile lists every fact~~ — done in M4: preferences in instructions, facts ranked by
   relevance within FACTS_TOKEN_BUDGET. The extractor still keeps some chatter ("X had coffee
   and might join project Y"); tighten further if it hurts ranking.
-- R7. Chat prompt caching misses: the cache breakpoint sits after the retrieval-augmented
-  message, which never recurs (history stores the plain text). Add a breakpoint before the
-  current message (PydanticAI `CachePoint`) so instructions + history are reused.
+- R7. ~~Chat prompt caching misses~~ — fixed: explicit breakpoints after instructions and before
+  the current message (`CachePoint`). Live, 5 consecutive Slack turns read 2,068 → 3,229 cached
+  tokens per call (~60-75% of input); before, 0. The window had also been sliding every turn
+  (see W10).
 - R8. A single user message larger than the budget still fails after the retries; treat it
   like a big document (chunk + summarize) or reject it with a friendly reply.
 - R9. Schema changes are not migrated: delete `.state/state.db` after pulling (pre-release).
@@ -79,6 +80,13 @@ sentence with a placeholder; spelling is correct either way.
   the budget guard on the live run; facts are now relevance-ranked within a budget.
 - W9. Retrieval first injected 6 snippets into every message (even "latest") because vector
   nearest neighbours always exist. Caught by a unit test; vector hits now need distance <= 0.35.
+- W10. Claude Code's token estimate counted every replayed request's stored `instructions`
+  (~1.2k tokens each), though providers only get the latest. Live turns looked ~1.3k tokens, the
+  history window shrank to 2 turns and its start moved every turn, defeating the cache. Caught by
+  checking cache reads live (R7). Now only the latest instructions count, stored runs drop
+  instructions, and replayed tool output is cut to a fixed stub.
+- W11. The history generator used one random number for both dates and hours ("dentist at
+  26:30"). Caught when the bot asked for a real time in the live run.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -92,3 +100,4 @@ sentence with a placeholder; spelling is correct either way.
 | 2026-10-20 | | M3: scoped/versioned facts, extractor, profile; scenarios 1, 4, 5 pass live |
 | 2026-10-20 | | Meta live check: loop fix, token-count fix, prompt + commentary fixes |
 | 2026-10-20 | | M4: hybrid search, retrieval, summaries, bounded context; scenario 2 passes live |
+| 2026-10-20 | | R7: cache breakpoints, instruction-count fix, stable window; cache reads verified live |

@@ -33,6 +33,11 @@ def get_agent() -> Agent[ChatDeps, str]:
         build_model(get_settings()),
         deps_type=ChatDeps,
         instructions=prompts.load("system"),
+        # Explicit breakpoints instead of automatic caching: one after tools + instructions,
+        # one before the current message (see core._user_prompt). Automatic caching would also
+        # write the volatile current message to cache on every call, which is never read back.
+        # Other providers ignore these keys.
+        model_settings={"anthropic_cache": False, "anthropic_cache_instructions": True},
     )
 
     @agent.instructions

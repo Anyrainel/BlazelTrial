@@ -84,7 +84,11 @@ def _part_text(part: Any) -> str:
     if hasattr(part, "args_as_json_str"):  # tool call
         return part.tool_name + part.args_as_json_str()
     content = getattr(part, "content", "")
-    return content if isinstance(content, str) else json.dumps(content, default=str)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):  # user content: text items count, markers (CachePoint) don't
+        return " ".join(c if isinstance(c, str) else "" for c in content)
+    return json.dumps(content, default=str)
 
 
 def estimate_tokens(
@@ -94,10 +98,13 @@ def estimate_tokens(
 
     Counts the content actually sent (text, tool args/returns, instructions, tool schemas), not
     PydanticAI's stored metadata, at a pessimistic chars-per-token ratio plus per-part overhead.
+    Only the most recent instructions count: providers are sent those, not each request's copy.
     """
-    chars, parts = 0, 0
+    latest = next(
+        (m.instructions for m in reversed(messages) if getattr(m, "instructions", None)), None
+    )
+    chars, parts = len(latest or ""), 0
     for message in messages:
-        chars += len(getattr(message, "instructions", None) or "")
         for part in message.parts:
             chars += len(_part_text(part))
             parts += 1

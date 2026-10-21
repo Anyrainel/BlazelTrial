@@ -30,3 +30,10 @@ def extractor_returning(script, seen: list | None = None):
     model = build_model(get_settings(), raw=extraction_model(script, seen))
     with get_extractor().override(model=model):
         yield
+
+
+def prompt_text(content) -> str:
+    """Text of a user prompt, ignoring markers such as CachePoint."""
+    if isinstance(content, str):
+        return content
+    return " ".join(c for c in content if isinstance(c, str))

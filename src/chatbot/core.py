@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from pydantic_ai.messages import (
+    CachePoint,
     ModelMessage,
     ModelMessagesTypeAdapter,
     ModelRequest,
@@ -30,21 +31,40 @@ logger = logging.getLogger(__name__)
 _RETRY_SCALES = (1.0, 0.6, 0.35)
 
 
+def _user_prompt(prompt: str, window: store.HistoryWindow) -> str | list:
+    """The run's user prompt, with a cache breakpoint before it when there is history.
+
+    `CachePoint()` first attaches `cache_control` to the end of the previous message, so
+    tools + instructions + replayed history are cached and the next turn (whose history extends
+    this one) reads them back. The current message itself (with its retrieved facts/snippets)
+    never recurs, so it is deliberately left outside the cache. Without history there is nothing
+    to attach to; the instructions breakpoint covers that case.
+    """
+    return [CachePoint(), prompt] if window.messages else prompt
+
+
 def _restore_user_text(messages: list[ModelMessage], sent: str, original: str) -> list:
-    """Replace the retrieval-augmented prompt with what the user typed before storing the run,
-    so stored history holds no copies of retrieved snippets (smaller, and forget stays simple)."""
-    if sent == original:
-        return messages
+    """Store the run with what the user typed in place of the augmented prompt (and without the
+    cache marker), so stored history holds no retrieved snippets (smaller; forget stays simple).
+
+    Instructions are dropped too: they are rebuilt every turn and only the latest are sent, so a
+    stored copy would only waste space and keep preferences/summaries in more places."""
+
+    def is_sent(content) -> bool:
+        if isinstance(content, list):
+            return sent in content
+        return content == sent
+
     out = []
     for m in messages:
         if isinstance(m, ModelRequest):
             parts = [
                 replace(p, content=original)
-                if isinstance(p, UserPromptPart) and p.content == sent
+                if isinstance(p, UserPromptPart) and is_sent(p.content)
                 else p
                 for p in m.parts
             ]
-            m = replace(m, parts=parts)
+            m = replace(m, parts=parts, instructions=None)
         out.append(m)
     return out
 
@@ -167,7 +187,7 @@ async def _handle(
             try:
                 with call_context(thread_id=thread_id, purpose="chat"):
                     result = await get_agent().run(
-                        prompt, message_history=window.messages, deps=deps
+                        _user_prompt(prompt, window), message_history=window.messages, deps=deps
                     )
                 break
             except BudgetExceededError as exc:

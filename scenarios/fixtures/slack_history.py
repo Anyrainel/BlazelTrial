@@ -73,7 +73,7 @@ _FILLER = [
     ("The {project} deadline moved to the {n}th.", "Noted, the {project} is now due the {n}th."),
     ("{person} is out sick, I'm covering their reviews.", "Thanks for stepping in."),
     ("Rainy again. Third day in a row.", "Sounds like a good day for focused work."),
-    ("Booked a dentist cleaning for {day} at {n}:30.", "Got it, dentist {day} at {n}:30."),
+    ("Booked a dentist cleaning for {day} at {hour}:30.", "Got it, dentist {day} at {hour}:30."),
     ("Any tips for keeping slides short?", "One idea per slide, and no more than six lines."),
     (
         "Coffee with {person} went well, they might join the {project}.",
@@ -100,6 +100,7 @@ def generate(n_turns: int = 500, seed: int = 7) -> list[dict]:
                 "food": rng.choice(_FOODS),
                 "book": rng.choice(_BOOKS),
                 "n": rng.randint(2, 28),
+                "hour": rng.randint(8, 17),
             }
             user, assistant = user_t.format(**slots), assistant_t.format(**slots)
         rows.append({"user": user, "assistant": assistant, "ts": ts.isoformat()})

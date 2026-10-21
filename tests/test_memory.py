@@ -10,6 +10,7 @@ from chatbot.config import get_settings
 from chatbot.memory import messages as store
 from chatbot.memory.messages import choose_window_start
 from chatbot.memory.models import Role, Source
+from tests.fakes import prompt_text
 
 
 def recording_model(calls: list[list]) -> FunctionModel:
@@ -24,7 +25,7 @@ def recording_model(calls: list[list]) -> FunctionModel:
 
 def user_texts(messages) -> list[str]:
     return [
-        p.content
+        prompt_text(p.content)
         for m in messages
         if isinstance(m, ModelRequest)
         for p in m.parts
@@ -105,3 +106,50 @@ def test_window_start_snaps_to_step_and_stays_stable():
     assert choose_window_start(sizes, budget=5, step=8) is None
     # only the latest turn fits and the aligned start is past it -> fall back to earliest fit
     assert choose_window_start(sizes, budget=10, step=8) == 20
+
+
+def test_cache_point_sits_before_the_current_message_only_with_history():
+    from pydantic_ai.messages import CachePoint
+
+    seen: list = []
+
+    def fn(messages, info: AgentInfo) -> ModelResponse:
+        last = messages[-1]
+        seen.append(next(p.content for p in last.parts if isinstance(p, UserPromptPart)))
+        return ModelResponse(parts=[TextPart("ok")])
+
+    with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
+        core.send("me", "A", "first")  # no history: nothing to attach a breakpoint to
+        core.send("me", "A", "second")
+
+    assert seen[0] == "first"
+    assert isinstance(seen[1][0], CachePoint) and seen[1][1] == "second"
+    stored = store.thread_messages("A")[-1].run_messages_json
+    assert "cache-point" not in stored  # markers are never persisted
+
+
+def test_stored_runs_drop_instructions_and_replay_shrinks_tool_output():
+    from pydantic_ai.messages import ModelMessagesTypeAdapter, ToolCallPart, ToolReturnPart
+
+    calls = 0
+
+    def fn(messages, info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return ModelResponse(parts=[ToolCallPart("search_history", {"query": "anything"})])
+        return ModelResponse(parts=[TextPart("ok")])
+
+    long_text = "Larkspur " * 300
+    core.ingest("me", "A", long_text, reply="noted")
+    with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
+        core.send("me", "A", "look it up")
+
+    stored = ModelMessagesTypeAdapter.validate_json(
+        store.thread_messages("A")[-1].run_messages_json
+    )
+    assert all(getattr(m, "instructions", None) is None for m in stored)
+
+    window = store.recent_history("A", budget=100_000, step=1, chars_per_token=3.0)
+    returns = [p for m in window.messages for p in m.parts if isinstance(p, ToolReturnPart)]
+    assert returns and all(len(p.model_response_str()) < 600 for p in returns)

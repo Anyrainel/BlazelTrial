@@ -8,7 +8,7 @@ from chatbot.config import get_settings
 from chatbot.memory import facts
 from chatbot.memory import messages as store
 from chatbot.memory.models import Scope
-from tests.fakes import extractor_returning
+from tests.fakes import extractor_returning, prompt_text
 
 MANAGER = {
     "kind": "fact",
@@ -45,7 +45,7 @@ TERSE = {
 def chat_model(instructions_seen: list[str]) -> FunctionModel:
     def fn(messages, info: AgentInfo) -> ModelResponse:
         last = next(m for m in reversed(messages) if isinstance(m, ModelRequest))
-        prompt = " ".join(str(getattr(p, "content", "")) for p in last.parts)
+        prompt = " ".join(prompt_text(getattr(p, "content", "")) for p in last.parts)
         instructions_seen.append((last.instructions or "") + " " + prompt)
         return ModelResponse(parts=[TextPart("ok")])
 

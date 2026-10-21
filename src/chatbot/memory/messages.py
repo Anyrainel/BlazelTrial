@@ -1,6 +1,6 @@
 """Message store: persist turns and rebuild a bounded, cache-friendly history window."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from pydantic_ai.messages import (
@@ -9,6 +9,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     TextPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestParameters
@@ -75,11 +76,36 @@ def record_turn(
         return rows
 
 
+_REPLAY_TOOL_RETURN_CHARS = 400
+
+
+def _shrink_tool_returns(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """Cut long tool returns in replayed turns to a fixed stub. Deterministic, so a turn replays
+    identically every time (stable, cacheable prefix); the tool can be called again if needed."""
+    out: list[ModelMessage] = []
+    for m in messages:
+        if isinstance(m, ModelRequest) and any(isinstance(p, ToolReturnPart) for p in m.parts):
+            parts = []
+            for p in m.parts:
+                if isinstance(p, ToolReturnPart):
+                    text = p.model_response_str()
+                    if len(text) > _REPLAY_TOOL_RETURN_CHARS:
+                        p = replace(
+                            p,
+                            content=text[:_REPLAY_TOOL_RETURN_CHARS]
+                            + " … [older tool output truncated; call the tool again for details]",
+                        )
+                parts.append(p)
+            m = replace(m, parts=parts)
+        out.append(m)
+    return out
+
+
 def _turn_messages(rows: list[Message]) -> list[ModelMessage]:
     """PydanticAI messages for one turn: the stored run if we have it, else plain text."""
     reply = next((r for r in rows if r.role == Role.ASSISTANT), None)
     if reply is not None and reply.run_messages_json:
-        return ModelMessagesTypeAdapter.validate_json(reply.run_messages_json)
+        return _shrink_tool_returns(ModelMessagesTypeAdapter.validate_json(reply.run_messages_json))
     out: list[ModelMessage] = []
     for r in rows:
         if r.role == Role.USER:

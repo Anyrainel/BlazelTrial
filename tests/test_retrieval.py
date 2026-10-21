@@ -17,6 +17,7 @@ from chatbot.config import get_settings
 from chatbot.memory import messages as store
 from chatbot.memory.summarize import get_summarizer
 from scenarios.fixtures.slack_history import PLANTED, generate
+from tests.fakes import prompt_text
 
 
 def load_history(n: int) -> None:
@@ -39,7 +40,9 @@ class Recorder:
             last = next(m for m in reversed(messages) if isinstance(m, ModelRequest))
             self.instructions.append(last.instructions or "")
             self.prompts.append(
-                " ".join(p.content for p in last.parts if isinstance(p, UserPromptPart))
+                " ".join(
+                    prompt_text(p.content) for p in last.parts if isinstance(p, UserPromptPart)
+                )
             )
             return ModelResponse(parts=[TextPart("ok")])
 
