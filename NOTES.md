@@ -63,7 +63,7 @@ old injection design.
   serialized + idempotent writes and transactional record indexing; messages get a startup
   reindex repair. Legacy extraction still attributes a batch to its last turn until it is
   replaced (PLAN sequence 3).
-- R13. Current fit_history drops only older replayed turns; it cannot bound the current run
+- R13 (addressed in step 4: in-run compaction + content idempotency). Current fit_history drops only older replayed turns; it cannot bound the current run
   once accumulated tool exchanges alone fill context. Core retries restart the run and can
   repeat completed tool work. Add checkpoints/result references and mutation idempotency.
 - R1. Hybrid retrieval (FTS5 + local embeddings): measure after prototype whether embeddings
@@ -185,3 +185,4 @@ old injection design.
 | 2026-10-21 | | Memory refactor step 1: contracts doc + storage layer (records, sources, versions, ownership, repair, migration) |
 | 2026-10-21 | | Memory refactor step 2: episode notes, fused source+note search, deterministic retrieval tests |
 | 2026-10-21 | | Memory refactor step 3: ask_memory subagent, write tools, injection/extraction removed; S1/S4/S5 live |
+| 2026-10-21 | | Memory refactor step 4: doc passages in search, in-run compaction + checkpoints, mutation keys, recovery tests |

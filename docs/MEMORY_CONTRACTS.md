@@ -36,7 +36,8 @@ No memory contents, title catalogs or search hits are injected into prompts by t
 | `note:<id>` | a source-linked episode note over a fixed, non-overlapping segment of messages | the session of its messages |
 | `rec:<id>` | one version of an agent-written memory record | session: its session; long_term: its user |
 | `psg:<id>` | a document passage of one document version | sessions that opened the document |
-| `ckpt:<id>` | a working-state checkpoint (PLAN step 4) | its session |
+| `ckpt:<id>` | a working-state checkpoint of a compacted run | its session |
+| `out:<id>` | a completed tool result moved out of a long run's context | its session |
 Ids are never reused. Malformed or unknown refs get the same "not found" reply.
 
 ## 4. Records, versions, sources
@@ -91,12 +92,20 @@ that returned a hit. CLI: `chatbot memory-search SESSION "query" --sources messa
 messages, not overlapping any existing note, text ≤ 1,500 chars; note row, `NoteSource` rows and
 FTS row commit in one transaction under the write lock.
 
+### Long current runs (PLAN step 4)
+Before every model request the history hook drops old replayed turns; if the current run alone
+is still over target, its completed tool results (all but the latest) are saved as `out:` refs
+(idempotent per tool call) and replaced in context by a stub naming the ref, and the run's goal
+and completed calls go to a `ckpt:` checkpoint. Call/return pairs stay intact. The main agent
+reads any of these back with `read_memory(ref)` (bounded; session-private).
+
 ## 6. Write path: `remember` / `update_memory`
 - **Arguments**: `store`, `kind`, `key`, `text`, `sources`, plus `supersedes` for updates.
   Handlers validate ownership, size, source visibility and the version relation.
 - **Serialized**: one process-wide lock around every mutation, plus a SQLite transaction.
-- **Idempotent**: the tool-call id is the idempotency key (unique). A retried write returns the
-  original record instead of writing twice.
+- **Idempotent**: the key is the turn (current message) + tool + arguments, so a repeated or
+  retried write in the same turn (even from a restarted run with new tool-call ids) returns the
+  original record; `send_message` uses the same rule.
 - **Atomic indexing**: a record's FTS row is written in the same transaction as the record.
   Message indexes get a durable repair path (`reindex_missing()` at startup) until they are
   written transactionally too.
