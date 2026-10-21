@@ -22,7 +22,7 @@ src/chatbot/
   config.py          # pydantic-settings; all paths/limits from .env
   agent/             # PydanticAI agent, model factory, budget guard + call log, history fit hook
   memory/            # SQLModel tables, fact extraction, summaries, hybrid search, forget
-  capabilities/      # chat tools; docs.py (fetch_doc, search_doc); registry in M6
+  capabilities/      # registry.py + one subpackage per capability (docs, messaging, linkedin)
   docs_reader/       # chunked reading of large docs, persisted doc notes
   surfaces/          # cli.py, http.py (FastAPI, serves web/dist), slack_app.py
   prompts/           # prompt text files
@@ -40,6 +40,7 @@ uv run python scripts/gen_docs.py          # generate .state/docs corpus (incl. 
 uv run chatbot chat --thread s1            # interactive CLI session
 uv run chatbot send USER THREAD "text"     # one-shot call to the core
 uv run chatbot ingest FILE.jsonl           # load {"user","assistant"} lines into slack-dm via core
+uv run chatbot capabilities                # capabilities + their per-request token cost
 uv run chatbot serve                       # FastAPI: POST /send, web UI at /
 uv run chatbot slack                       # Slack app (Socket Mode)
 uv run python -m scenarios                 # scenario script, prints PASS/FAIL

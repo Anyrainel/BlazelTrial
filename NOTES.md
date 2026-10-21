@@ -18,6 +18,11 @@ Q3-plan." took 95 s (36 map/reduce calls, note cached); after 100 ingested turns
 launch date in that plan?" → "Tuesday, September 29, 2026" plus the other milestones. 55 calls,
 all within budget, max chat input 6,968.
 
+Scenario 7 (Claude, on scenario 2's 500-turn history, 2026-10-21): PASS. Post: 906 chars,
+3 hashtags on the last line, no links, facts from Q3-plan (launch September 29, 2026; beta
+August 18). 44 calls (36 for the first Q3-plan note), all within budget; max 7,855 input tokens
+(see R14). Live `send_message`: "Message my partner..." → recorded to Sam.
+
 Meta needed fixes before passing (W5–W7). Muse answers "write one sentence about our favourite
 organisation's logo" by saying it doesn't know the organisation, where Claude writes the
 sentence with a placeholder; spelling is correct either way.
@@ -64,6 +69,12 @@ sentence with a placeholder; spelling is correct either way.
   like a big document (chunk + summarize) or reject it with a friendly reply.
 - R10. First fetch of a big doc takes ~95 s (15 map calls). Could precompute notes when docs
   are generated/changed, or stream a quick partial answer.
+- R14. Estimate vs real: the history hook kept a LinkedIn turn's third request under the
+  6,400-token estimate target, yet Claude counted 7,855 (~23% more: tool exchanges, thinking
+  blocks, template text). The guard still holds; tighten via estimation work or by asking the
+  provider count inside the hook (deferred per PLAN: estimation precision is a follow-up).
+- R15. Replies sometimes cite internal turn numbers ("my earlier answer in turn 506") because
+  snippets are labelled by turn; label by date instead.
 - R9. Schema changes are not migrated: delete `.state/state.db` after pulling (pre-release).
 
 ## Where the AI was wrong
@@ -113,6 +124,12 @@ sentence with a placeholder; spelling is correct either way.
 - W14. A Claude Code test captured the message list PydanticAI mutates in place, so both
   "requests" looked identical; and a later version was sized so nothing needed trimming (a
   vacuous pass). Caught by debugging the processor directly.
+- W15. Claude Code's first LinkedIn fallback, after the writer exhausted its retries, assembled
+  the post from the *brief* instead of the writer's last draft. Caught by a unit test; the
+  fallback now trims the last draft deterministically.
+- W16. Claude Code proposed "on-demand capability instructions" for M6, against the user's
+  recorded D24 (load upfront, measure first). Caught by reading the repo before starting;
+  confirmed with the user and built upfront loading with a cost report.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -128,3 +145,4 @@ sentence with a placeholder; spelling is correct either way.
 | 2026-10-20 | | M4: hybrid search, retrieval, summaries, bounded context; scenario 2 passes live |
 | 2026-10-20 | | R7: cache breakpoints, instruction-count fix, stable window; cache reads verified live |
 | 2026-10-21 | | M5: docs generator, passage search, map-reduce notes, doc tools; scenario 3 passes live |
+| 2026-10-21 | | M6: capability registry, send_message, LinkedIn writer + validator; scenario 7 passes live |
