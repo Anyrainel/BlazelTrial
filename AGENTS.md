@@ -20,14 +20,14 @@ web: React + Vite + TypeScript + assistant-ui (npm).
 src/chatbot/
   core.py            # send(): the ONLY entry point for every surface
   config.py          # pydantic-settings; all paths/limits from .env
-  agent/             # PydanticAI agent, model factory, budget + logging hooks, history processors
+  agent/             # PydanticAI agent, model factory, budget guard + call log, history fit hook
   memory/            # SQLModel tables, fact extraction, summaries, hybrid search, forget
-  capabilities/      # one module per capability (+ instructions.md), registry
+  capabilities/      # chat tools; docs.py (fetch_doc, search_doc); registry in M6
   docs_reader/       # chunked reading of large docs, persisted doc notes
   surfaces/          # cli.py, http.py (FastAPI, serves web/dist), slack_app.py
   prompts/           # prompt text files
 web/                 # assistant-ui frontend
-scenarios/           # scenario runner (PASS/FAIL) + fixture generators
+scenarios/           # scenario runner (PASS/FAIL) + fixtures/ (slack_history.py, docs.py)
 scripts/             # gen_docs.py etc.
 tests/               # offline unit tests (PydanticAI TestModel/FunctionModel)
 .state/              # runtime only, gitignored: state.db, docs/, logs/, models/

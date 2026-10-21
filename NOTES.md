@@ -13,6 +13,11 @@ Scenario 2 (Claude, 500 ingested turns, 2026-10-20): PASS. "Which caterer ... de
 175 s and 72 calls (53 extract, 19 summarize); 75 calls total, all within budget, max chat
 input 5,227 tokens.
 
+Scenario 3 (Claude, 2026-10-20): PASS. Q3-plan is 35,370 tokens (Claude count). "Summarize doc
+Q3-plan." took 95 s (36 map/reduce calls, note cached); after 100 ingested turns, "What was the
+launch date in that plan?" → "Tuesday, September 29, 2026" plus the other milestones. 55 calls,
+all within budget, max chat input 6,968.
+
 Meta needed fixes before passing (W5–W7). Muse answers "write one sentence about our favourite
 organisation's logo" by saying it doesn't know the organisation, where Claude writes the
 sentence with a placeholder; spelling is correct either way.
@@ -47,6 +52,8 @@ sentence with a placeholder; spelling is correct either way.
   (see W10).
 - R8. A single user message larger than the budget still fails after the retries; treat it
   like a big document (chunk + summarize) or reject it with a friendly reply.
+- R10. First fetch of a big doc takes ~95 s (15 map calls). Could precompute notes when docs
+  are generated/changed, or stream a quick partial answer.
 - R9. Schema changes are not migrated: delete `.state/state.db` after pulling (pre-release).
 
 ## Where the AI was wrong
@@ -87,6 +94,15 @@ sentence with a placeholder; spelling is correct either way.
   instructions, and replayed tool output is cut to a fixed stub.
 - W11. The history generator used one random number for both dates and hours ("dentist at
   26:30"). Caught when the bot asked for a real time in the live run.
+- W12. Claude Code's first doc reducer grouped notes by size only; reduce outputs (~3.8k chars)
+  often didn't pair under the 7.5k group limit, so the note count stopped shrinking: 149 calls,
+  892 s for one summary. Caught in the live scenario 3 log. Groups now take >= 2 clipped notes.
+- W13. Context assembly sized only the first request of a turn; fetch_doc + search_doc results
+  pushed the next request to 8,506 tokens (refused by pre-flight, then retried). Caught in the
+  same log; a ProcessHistory hook now re-fits every request in the tool loop.
+- W14. A Claude Code test captured the message list PydanticAI mutates in place, so both
+  "requests" looked identical; and a later version was sized so nothing needed trimming (a
+  vacuous pass). Caught by debugging the processor directly.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -101,3 +117,4 @@ sentence with a placeholder; spelling is correct either way.
 | 2026-10-20 | | Meta live check: loop fix, token-count fix, prompt + commentary fixes |
 | 2026-10-20 | | M4: hybrid search, retrieval, summaries, bounded context; scenario 2 passes live |
 | 2026-10-20 | | R7: cache breakpoints, instruction-count fix, stable window; cache reads verified live |
+| 2026-10-21 | | M5: docs generator, passage search, map-reduce notes, doc tools; scenario 3 passes live |
