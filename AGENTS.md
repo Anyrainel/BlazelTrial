@@ -67,8 +67,10 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
 4. **History integrity.** History processors never split a tool call from its return.
 5. **Memory design is evolving.** Agents read and write memory through bounded tools;
    do not automatically inject stored facts, preferences, summaries, or search hits every turn.
-   Session and long-term stores are the current direction; detailed scope/lifetime policies
-   remain open. Preserve acceptance behaviour: shared facts are recallable across sessions,
+   Target recall interface: `ask_memory` backed by a bounded read-only subagent searching source
+   records and source-linked summary notes with BM25 (PLAN.md; D29-D30). Session and long-term
+   stores persist separately in visibility; detailed scope/lifetime policies remain open.
+   Preserve acceptance behaviour: shared facts are recallable across sessions,
    and draft-local instructions do not leak into other sessions.
 6. **Supersede, don't overwrite.** Changed preferences get a new version; the old one is marked
    superseded with a timestamp, so "what did I say before?" is answerable.

@@ -28,6 +28,12 @@ organisation's logo" by saying it doesn't know the organisation, where Claude wr
 sentence with a placeholder; spelling is correct either way.
 
 ## Assumptions
+- A5. 2026-10-21 memory plan: persisted source evidence + source-linked summary notes, searched
+  together through BM25 behind a bounded read-only memory subagent. Evaluate existing vectors
+  rather than mandate or remove them. Session persistence does not grant cross-session access.
+  Initial note grouping uses bounded non-overlapping segments; exact size and detailed lifetime
+  policy remain tunable. Full design/implementation sequence: PLAN.md; decisions D29-D30.
+  This is accepted design, not implemented runtime behaviour or a new scenario PASS.
 - A1. Single user, hard-coded `user_id` mapping between main chat and Slack.
 - A2. Runtime state, including the generated document corpus, lives in gitignored `.state/`
   inside the repo dir (satisfies "SQLite or files inside the repo directory"; keeps user data out
