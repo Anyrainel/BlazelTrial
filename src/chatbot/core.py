@@ -121,7 +121,7 @@ def _assemble(user_id: str, thread_id: str, text: str, scale: float = 1.0):
     """
     settings = get_settings()
     cpt = settings.estimate_chars_per_token
-    target = int(settings.max_input_tokens * settings.context_fill_ratio * scale)
+    target = int(settings.context_target_tokens * scale)
     system_tokens = len(prompts.load("system")) / cpt + settings.tool_overhead_tokens
 
     def window_for(budget: int):

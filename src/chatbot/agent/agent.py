@@ -5,9 +5,11 @@ from functools import cache
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.agent import AgentRunResult
+from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import ModelResponse, TextPart
 
 from chatbot import prompts
+from chatbot.agent.history import fit_history
 from chatbot.agent.models import build_model
 from chatbot.capabilities import docs as doc_tools
 from chatbot.config import get_settings
@@ -35,6 +37,7 @@ def get_agent() -> Agent[ChatDeps, str]:
         build_model(get_settings()),
         deps_type=ChatDeps,
         instructions=prompts.load("system"),
+        capabilities=[ProcessHistory(fit_history)],
         # Explicit breakpoints instead of automatic caching: one after tools + instructions,
         # one before the current message (see core._user_prompt). Automatic caching would also
         # write the volatile current message to cache on every call, which is never read back.

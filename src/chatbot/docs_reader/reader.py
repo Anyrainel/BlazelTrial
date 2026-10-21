@@ -198,15 +198,25 @@ async def _map(doc: Doc, parts: list[str]) -> list[str]:
 
 
 async def _reduce(doc: Doc, notes: list[str], max_chars: int) -> str:
-    """Combine notes; if they don't fit one call, combine in groups and repeat."""
+    """Combine notes in groups until one remains.
+
+    Every group takes at least two notes, each clipped to half the group size, so the count at
+    least halves per round and the loop always ends (log2(n) rounds).
+    """
+    half = max_chars // 2
     while True:
-        groups, buf = [], []
-        for note in notes:
-            if buf and sum(len(n) for n in buf) + len(note) > max_chars:
-                groups.append(buf)
-                buf = []
-            buf.append(note)
-        groups.append(buf)
+        clipped = [n if len(n) <= half else n[:half] + " …" for n in notes]
+        groups: list[list[str]] = []
+        for note in clipped:
+            last = groups[-1] if groups else None
+            if last is not None and (
+                len(last) < 2 or sum(len(n) for n in last) + len(note) <= max_chars
+            ):
+                last.append(note)
+            else:
+                groups.append([note])
+        if len(groups) > 1 and len(groups[-1]) == 1:  # never leave a lone note behind
+            groups[-2].extend(groups.pop())
         outs = []
         for group in groups:
             body = "\n\n".join(f"[Part notes {i + 1}]\n{n}" for i, n in enumerate(group))
@@ -216,12 +226,27 @@ async def _reduce(doc: Doc, notes: list[str], max_chars: int) -> str:
         notes = outs
 
 
-async def get_note(doc: Doc) -> str:
-    """The doc note for this version, computed once and cached in the DB."""
+_note_locks: dict[str, asyncio.Lock] = {}
+
+
+def _cached_note(sha256: str) -> str | None:
     with session() as s:
-        cached = s.exec(select(DocNote).where(DocNote.sha256 == doc.sha256)).first()
-    if cached:
-        return cached.text
+        cached = s.exec(select(DocNote).where(DocNote.sha256 == sha256)).first()
+    return cached.text if cached else None
+
+
+async def get_note(doc: Doc) -> str:
+    """The doc note for this version, computed once and cached in the DB. Concurrent requests
+    for the same document (e.g. parallel tool calls) wait for one computation."""
+    if note := _cached_note(doc.sha256):
+        return note
+    async with _note_locks.setdefault(doc.sha256, asyncio.Lock()):
+        if note := _cached_note(doc.sha256):
+            return note
+        return await _compute_note(doc)
+
+
+async def _compute_note(doc: Doc) -> str:
     settings = get_settings()
     # Leave half the budget for instructions, framing and output.
     max_chars = int(

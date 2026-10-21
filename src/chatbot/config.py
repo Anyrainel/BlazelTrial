@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     doc_chunk_tokens: int = 2500  # map step input size
     doc_passage_chars: int = 1200  # search unit for search_doc
     doc_search_token_budget: int = 1500
-    doc_note_concurrency: int = 4
+    doc_note_concurrency: int = 6
 
     # Rolling summaries of turns that have scrolled out of the replayed window.
     summary_chunk_turns: int = 25
@@ -87,6 +87,22 @@ class Settings(BaseSettings):
     def state_path(self) -> Path:
         path = self.state_dir if self.state_dir.is_absolute() else REPO_ROOT / self.state_dir
         return path
+
+    @property
+    def uses_server_count(self) -> bool:
+        """Whether pre-flight sizes requests with the provider's count endpoint."""
+        return self.token_count_mode == "server" or (
+            self.token_count_mode == "auto" and self.llm_provider in ("anthropic", "meta")
+        )
+
+    @property
+    def context_target_tokens(self) -> int:
+        """Estimated-token target for assembling a request. When pre-flight will use the local
+        estimate (x safety factor), aim lower by the same factor so assembled requests pass."""
+        target = self.max_input_tokens * self.context_fill_ratio
+        if not self.uses_server_count:
+            target /= self.estimate_safety_factor
+        return int(target)
 
     @property
     def db_path(self) -> Path:

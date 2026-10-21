@@ -153,3 +153,32 @@ def test_stored_runs_drop_instructions_and_replay_shrinks_tool_output():
     window = store.recent_history("A", budget=100_000, step=1, chars_per_token=3.0)
     returns = [p for m in window.messages for p in m.parts if isinstance(p, ToolReturnPart)]
     assert returns and all(len(p.model_response_str()) < 600 for p in returns)
+
+
+def test_tool_output_growth_drops_oldest_turns_not_the_current_one(monkeypatch):
+    from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+
+    for i in range(30):
+        core.ingest("me", "A", f"old message {i} " + "y" * 300, reply="ok " + "z" * 300)
+
+    seen: list[list] = []
+
+    def fn(messages, info: AgentInfo) -> ModelResponse:
+        seen.append(list(messages))  # copy: the history list is mutated in place between requests
+        if len(seen) == 1:
+            return ModelResponse(parts=[ToolCallPart("search_history", {"query": "old"})])
+        return ModelResponse(parts=[TextPart("ok")])
+
+    monkeypatch.setenv("TOKEN_COUNT_MODE", "estimate")  # fake models can't count tokens
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "chatbot.memory.retrieve.snippets", lambda *a, **k: "big tool output " + "w" * 3600
+    )
+    with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
+        core.send("me", "A", "find it")
+
+    first, second = seen  # one run, two requests: no budget refusal and retry happened
+    assert user_texts(second)[-1].endswith("find it")  # current turn intact
+    assert len(user_texts(second)) < len(user_texts(first))  # older turns dropped
+    kinds = [type(p) for m in second for p in m.parts]
+    assert kinds.count(ToolCallPart) == kinds.count(ToolReturnPart)  # pairs intact

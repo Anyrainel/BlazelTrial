@@ -148,3 +148,37 @@ def test_small_docs_come_back_whole(docs):
 
     out = asyncio.run(tools.fetch_doc(Ctx(), "tiny"))
     assert "full text" in out and "May 3" in out
+
+
+def test_reduce_converges_even_when_outputs_are_large():
+    from chatbot.docs_reader.reader import Doc, _reduce, get_reducer
+
+    calls = 0
+
+    def fn(messages, info):
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[TextPart("z" * 5000)])  # every output bigger than half
+
+    notes = ["n" * 4000 for _ in range(16)]
+    with get_reducer().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
+        asyncio.run(_reduce(Doc("d", "", "x"), notes, max_chars=7500))
+    assert calls <= 16  # 8 + 4 + 2 + 1 = 15 at most, never a runaway loop
+
+
+def test_parallel_fetches_compute_the_note_once(docs):
+    notes = NoteModel()
+    doc = reader.load("Q3-plan")
+
+    async def both():
+        return await asyncio.gather(reader.get_note(doc), reader.get_note(doc))
+
+    with (
+        reader.get_mapper().override(model=notes.model()),
+        reader.get_reducer().override(model=notes.model()),
+    ):
+        a, b = asyncio.run(both())
+        single = notes.calls
+    assert a == b
+    parts = len(reader.chunks(doc.text, int(2500 * get_settings().estimate_chars_per_token)))
+    assert single < 2 * parts  # one map pass (+ a few reduces), not two
