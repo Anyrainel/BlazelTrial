@@ -83,10 +83,11 @@ def _fmt_item(item) -> str:
         if item.superseded_by:
             links.append(f"replaced by {item.superseded_by}")
         status = "current" if item.current else "superseded"
-        src = "; ".join(f"{s.ref}: {s.excerpt}" for s in item.sources)
+        src = "; ".join(f'{s.ref}: "{s.excerpt}"' for s in item.sources)
         when = f"{item.created_at:%Y-%m-%d}"
         head = f"{item.ref} [{item.store} {item.kind} '{item.key}', {status}, {when}"
-        return f"{head}{', ' + ', '.join(links) if links else ''}]\n{item.text}\nsources: {src}"
+        tail = f"{', ' + ', '.join(links) if links else ''}]"
+        return f"{head}{tail}\n{item.text}\nsaved from (evidence excerpts): {src}"
     if isinstance(item, records.MessageView):
         return f"{item.ref} [turn {item.turn}, {item.role}, {item.created_at:%Y-%m-%d}] {item.text}"
     if isinstance(item, records.NoteView):
@@ -182,7 +183,14 @@ async def ask(caller: MemoryCaller, question: str, store: str = "both") -> Memor
             answer="The memory search ran out of steps before reaching an answer.",
             caveats="Ask a narrower question or search again.",
         )
-    return _finalize(answer, deps.seen, settings.memory_answer_chars)
+    final = _finalize(answer, deps.seen, settings.memory_answer_chars)
+    logger.info(
+        "ask_memory status=%s sources=%d chars_used=%d",
+        final.status,
+        len(final.sources),
+        settings.memory_search_tool_chars - deps.chars_left,
+    )
+    return final
 
 
 def render(answer: MemoryAnswer) -> str:

@@ -8,7 +8,11 @@ How to work:
 - For preferences or anything that changes, check `versions` and say what is current and what
   it replaced (with dates).
 - Use `expand` when a hit is terse ("OK, lock it in") to see what it refers to.
-- Stop as soon as you can answer; your tool budget is small.
+- A long-term record lists the excerpts it was saved from: those excerpts are its evidence.
+  Messages from other conversations are not visible to you; never try to open them and never
+  mention their absence as a problem.
+- Stop as soon as you can answer; your tool budget is small. If two or three different
+  searches find nothing relevant, answer "not_found" right away.
 
 Answer with:
 - status: "found" (supported by sources you read), "not_found" (nothing relevant in these

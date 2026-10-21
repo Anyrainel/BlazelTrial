@@ -27,6 +27,12 @@ Meta needed fixes before passing (W5–W7). Muse answers "write one sentence abo
 organisation's logo" by saying it doesn't know the organisation, where Claude writes the
 sentence with a placeholder; spelling is correct either way.
 
+Tool-first memory (PLAN step 3, Claude, 2026-10-21): scenarios 1, 4, 5 PASS with no injected
+memory. The agent saved facts/preferences itself, superseded British -> American via
+`update_memory`, and explained the change from the version chain. 179 calls (32 chat, 147
+memory_search), all within budget, max 6,426 input tokens. Historical passes above describe the
+old injection design.
+
 ## Assumptions
 - A5. 2026-10-21 memory plan: persisted source evidence + source-linked summary notes, searched
   together through BM25 behind a bounded read-only memory subagent. Evaluate existing vectors
@@ -39,6 +45,9 @@ sentence with a placeholder; spelling is correct either way.
   inside the repo dir (satisfies "SQLite or files inside the repo directory"; keeps user data out
   of git). `fetch_doc` reads `.state/docs/`; graders generate it with `scripts/gen_docs.py`.
 - A3. "Styled" web UI is allowed even though the brief says no styling is needed.
+- A5b. Ingested history goes through the same pipeline (storage, indexing, note maintenance)
+  but runs no agent, so it produces no tool-written records; ingested facts are recalled from
+  raw messages and notes via ask_memory.
 - A4. Budget number = provider-reported input tokens including cache reads/writes
   (PydanticAI's normalized `RequestUsage.input_tokens`).
 
@@ -88,6 +97,10 @@ sentence with a placeholder; spelling is correct either way.
 - R16. Paraphrase recall without notes: deterministic tests use the hash embedder, which has no
   semantics. Measure raw BM25 vs + notes vs + fastembed vectors on the 500-turn fixture before
   deciding the default `sources` (PLAN sequence 6).
+- R17. ask_memory is used on most turns (policy: check preferences before drafting, recall
+  before personal answers): ~4.6 subagent requests per chat request live. Measure and tune in
+  PLAN step 6 (fewer steps per question, skip preference checks for non-drafting turns, cache
+  answers within a turn).
 - R9. Schema changes are not migrated: delete `.state/state.db` after pulling (pre-release).
 
 ## Where the AI was wrong
@@ -147,6 +160,12 @@ sentence with a placeholder; spelling is correct either way.
   restore a file that was not committed yet; the restore failed silently and the suite ran
   against the mutated file (2 failures). Caught from the test output; restored from the
   /tmp backup. Lesson: commit (or copy) before mutating.
+- W18. First live run of the tool-first memory: the subagent tried to open the source
+  message of a long-term record from another session (correctly invisible) and reported its
+  absence as a caveat; the main agent also showed internal refs ("rec:2") and said lookups
+  "failed" when the subagent hit its step limit on empty searches. Caught by reading the live
+  transcript; prompt fixes (cited excerpts are the evidence, not_found after 2-3 empty
+  searches, never show refs).
 
 ## Rejected AI suggestions
 - (none yet)
@@ -165,3 +184,4 @@ sentence with a placeholder; spelling is correct either way.
 | 2026-10-21 | | M6: capability registry, send_message, LinkedIn writer + validator; scenario 7 passes live |
 | 2026-10-21 | | Memory refactor step 1: contracts doc + storage layer (records, sources, versions, ownership, repair, migration) |
 | 2026-10-21 | | Memory refactor step 2: episode notes, fused source+note search, deterministic retrieval tests |
+| 2026-10-21 | | Memory refactor step 3: ask_memory subagent, write tools, injection/extraction removed; S1/S4/S5 live |

@@ -16,8 +16,9 @@ session; persistence does not imply cross-session visibility. Detailed scope/lif
 open, subject to the assignment's sharing, local-instruction, preference-history and forgetting
 scenarios. Start with current tool schemas and instructions loaded and measure their cost.
 
-Implementation status: the existing harness still assembles memory blocks and runs automatic
-extraction/summarisation. The tool-first architecture below is the next refactor, not completed.
+Implementation status (2026-10-21): sequence steps 1-3 are implemented (storage contracts,
+source + note search, ask_memory subagent and write tools; harness injection and automatic
+extraction removed). Steps 4-7 follow.
 
 ## Next design/refactor work
 1. Define bounded session/long-term search, read and write contracts, stable record IDs,
