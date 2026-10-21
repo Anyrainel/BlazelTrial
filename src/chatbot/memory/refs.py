@@ -30,3 +30,7 @@ def msg(id_: int) -> str:
 
 def rec(id_: int) -> str:
     return f"rec:{id_}"
+
+
+def note(id_: int) -> str:
+    return f"note:{id_}"

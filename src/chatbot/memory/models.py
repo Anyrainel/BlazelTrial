@@ -169,3 +169,24 @@ class RecordSource(SQLModel, table=True):
     record_id: int = Field(foreign_key="memoryrecord.id", index=True)
     ref: str = Field(index=True)
     excerpt: str
+
+
+class EpisodeNote(SQLModel, table=True):
+    """A derived, searchable note over one fixed, non-overlapping segment of a session's
+    messages (docs/MEMORY_CONTRACTS.md §4). Navigation aid, never evidence by itself."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    session_id: str = Field(index=True)
+    start_message_id: int = Field(index=True)
+    end_message_id: int = Field(index=True)
+    text: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class NoteSource(SQLModel, table=True):
+    """Exact coverage: one row per message a note was written from."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    note_id: int = Field(foreign_key="episodenote.id", index=True)
+    message_id: int = Field(index=True)

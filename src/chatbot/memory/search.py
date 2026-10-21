@@ -41,6 +41,10 @@ def create_fts(engine: Engine) -> None:
             "text, doc_id UNINDEXED, tokenize='porter unicode61')"
         )
         conn.exec_driver_sql(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS note_fts USING fts5("
+            "text, user_id UNINDEXED, session_id UNINDEXED, tokenize='porter unicode61')"
+        )
+        conn.exec_driver_sql(
             "CREATE VIRTUAL TABLE IF NOT EXISTS record_fts USING fts5("
             "key, text, user_id UNINDEXED, store UNINDEXED, session_id UNINDEXED, "
             "tokenize='porter unicode61')"
@@ -280,6 +284,45 @@ def search_records(
         return [rid for (rid,) in conn.exec_driver_sql(sql, (*params, k)).all()]
 
 
+def index_note(conn, note) -> None:
+    """Index an episode note on the caller's open transaction (commits with the note)."""
+    conn.exec_driver_sql(
+        "INSERT INTO note_fts(rowid, text, user_id, session_id) VALUES (?, ?, ?, ?)",
+        (note.id, note.text, note.user_id, note.session_id),
+    )
+
+
+def search_notes(user_id: str, session_id: str, query: str, *, k: int) -> list[int]:
+    """Note ids of one session matching `query` (BM25), best first."""
+    q = fts_query(query)
+    if not q:
+        return []
+    with _engine().begin() as conn:
+        rows = conn.exec_driver_sql(
+            "SELECT rowid FROM note_fts WHERE note_fts MATCH ? AND user_id = ? "
+            "AND session_id = ? ORDER BY bm25(note_fts) LIMIT ?",
+            (q, user_id, session_id, k),
+        ).all()
+    return [nid for (nid,) in rows]
+
+
+def vector_session_messages(
+    session_id: str, query: str, *, k: int, max_distance: float
+) -> list[int]:
+    """Message ids of one session nearest to `query` by embedding, within `max_distance`."""
+    engine = _engine()
+    embedder = get_embedder()
+    table = _ensure_vec(engine, embedder.dim)
+    [vec] = embedder.embed([query[:_EMBED_CHARS]])
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql(
+            f"SELECT rowid, distance FROM {table} WHERE embedding MATCH ? AND k = ? "
+            "AND thread_id = ? ORDER BY distance",
+            (sqlite_vec.serialize_float32(vec), k, session_id),
+        ).all()
+    return [mid for mid, dist in rows if dist <= max_distance]
+
+
 def search_session_messages(session_id: str, query: str, *, k: int) -> list[int]:
     """Message ids of one session matching `query` (BM25), best first."""
     q = fts_query(query)
@@ -309,6 +352,14 @@ def reindex_missing() -> dict[str, int]:
             f"SELECT id, text, thread_id, turn FROM message "
             f"WHERE id NOT IN (SELECT rowid FROM {vec_table})"
         ).all()
+        no_note = conn.exec_driver_sql(
+            "SELECT id, text, user_id, session_id FROM episodenote "
+            "WHERE id NOT IN (SELECT rowid FROM note_fts)"
+        ).all()
+        for nid, text, user_id, session_id in no_note:
+            index_note(
+                conn, SimpleNamespace(id=nid, text=text, user_id=user_id, session_id=session_id)
+            )
         no_rec = conn.exec_driver_sql(
             "SELECT id, key, text, user_id, store, session_id FROM memoryrecord "
             "WHERE id NOT IN (SELECT rowid FROM record_fts)"
@@ -331,7 +382,12 @@ def reindex_missing() -> dict[str, int]:
                 id=rid, key=key, text=text, user_id=user_id, store=store, session_id=session_id
             )
             index_record(conn, row)
-    return {"message_fts": len(no_fts), "message_vec": len(no_vec), "record_fts": len(no_rec)}
+    return {
+        "message_fts": len(no_fts),
+        "message_vec": len(no_vec),
+        "record_fts": len(no_rec),
+        "note_fts": len(no_note),
+    }
 
 
 @cache

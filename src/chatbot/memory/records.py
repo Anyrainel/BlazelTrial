@@ -13,13 +13,16 @@ from datetime import datetime
 
 from sqlmodel import Session, col, select
 
+from chatbot.config import get_settings
 from chatbot.memory import refs, search
 from chatbot.memory.db import session
 from chatbot.memory.models import (
     DocPassage,
     DocRef,
+    EpisodeNote,
     MemoryRecord,
     Message,
+    NoteSource,
     RecordKind,
     RecordSource,
     Role,
@@ -35,6 +38,8 @@ MAX_EXCERPT = 300
 MAX_K = 10
 MAX_EXPAND = 5
 MAX_VERSIONS = 20
+MAX_NOTE = 1500
+MAX_RESULT_CHARS = 2400  # total excerpt text one search returns
 
 _write_lock = threading.Lock()
 
@@ -89,13 +94,24 @@ class PassageView:
 
 
 @dataclass(frozen=True)
+class NoteView:
+    ref: str
+    text: str
+    covers: list[str]  # exact msg refs the note was written from, oldest first
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class Hit:
     ref: str
-    type: str  # "record" | "message"
+    type: str  # "record" | "message" | "note"
     store: str
     excerpt: str
     current: bool
     created_at: datetime
+    found_by: tuple[str, ...]  # candidate lists that returned it: bm25 / notes / vectors
+    turn: int | None = None  # message hits
+    covers: str | None = None  # note hits: "msg:a..msg:b (n messages)"
 
 
 def _clip(text: str, limit: int) -> str:
@@ -126,6 +142,23 @@ def _visible_message(s: Session, caller: MemoryCaller, mid: int) -> Message | No
     return m
 
 
+def _visible_note(s: Session, caller: MemoryCaller, nid: int) -> EpisodeNote | None:
+    n = s.get(EpisodeNote, nid)
+    if n is None or n.user_id != caller.user_id or n.session_id != caller.session_id:
+        return None
+    return n
+
+
+def _note_covers(s: Session, note_id: int) -> list[int]:
+    return list(
+        s.exec(
+            select(NoteSource.message_id)
+            .where(NoteSource.note_id == note_id)
+            .order_by(col(NoteSource.message_id))
+        ).all()
+    )
+
+
 def _visible_passage(s: Session, caller: MemoryCaller, pid: int) -> DocPassage | None:
     p = s.get(DocPassage, pid)
     if p is None:
@@ -147,7 +180,9 @@ def _resolve_excerpt(s: Session, caller: MemoryCaller, ref: str) -> str:
         return _clip(p.text, MAX_EXCERPT)
     if parsed.type == "rec" and (r := _visible_record(s, caller, parsed.id)):
         return _clip(r.text, MAX_EXCERPT)
-    raise _not_found(ref)  # unknown, invisible, or a type not yet backed (note:, ckpt:)
+    if parsed.type == "note" and (n := _visible_note(s, caller, parsed.id)):
+        return _clip(n.text, MAX_EXCERPT)
+    raise _not_found(ref)  # unknown, invisible, or a type not yet backed (ckpt:)
 
 
 # --- views ------------------------------------------------------------------------------------
@@ -292,6 +327,9 @@ def read(caller: MemoryCaller, ref: str) -> RecordView | MessageView | PassageVi
             )
         if parsed.type == "psg" and (p := _visible_passage(s, caller, parsed.id)):
             return PassageView(ref, p.doc_id, p.section, _clip(p.text, MAX_READ_CHARS))
+        if parsed.type == "note" and (n := _visible_note(s, caller, parsed.id)):
+            covers = [refs.msg(mid) for mid in _note_covers(s, n.id)]
+            return NoteView(ref, _clip(n.text, MAX_READ_CHARS), covers, n.created_at)
     raise _not_found(ref)
 
 
@@ -344,47 +382,159 @@ def versions(caller: MemoryCaller, ref: str) -> list[RecordView]:
         return [_view(s, x, with_sources=False) for x in chain[-MAX_VERSIONS:]]
 
 
+# --- notes (written by maintenance, not by the model) -------------------------------------------
+
+
+def add_note(user_id: str, session_id: str, message_ids: list[int], text: str) -> str:
+    """Store an episode note over one contiguous, not-yet-covered segment of a session.
+
+    Trusted maintenance API (the model never calls it). Validates that the messages exist,
+    belong to the session, form a contiguous run, and overlap no existing note.
+    """
+    text = text.strip()
+    if not text or len(text) > MAX_NOTE:
+        raise MemoryAccessError(f"note text must be 1-{MAX_NOTE} characters")
+    ids = sorted(set(message_ids))
+    if not ids:
+        raise MemoryAccessError("a note must cover at least one message")
+    with _write_lock, session() as s:
+        in_range = s.exec(
+            select(Message.id).where(
+                Message.thread_id == session_id,
+                Message.user_id == user_id,
+                col(Message.id) >= ids[0],
+                col(Message.id) <= ids[-1],
+            )
+        ).all()
+        if sorted(in_range) != ids:
+            raise MemoryAccessError("note must cover a contiguous run of this session's messages")
+        taken = s.exec(
+            select(NoteSource.message_id).where(col(NoteSource.message_id).in_(ids))
+        ).first()
+        if taken is not None:
+            raise MemoryAccessError(f"{refs.msg(taken)} is already covered by another note")
+        note = EpisodeNote(
+            user_id=user_id,
+            session_id=session_id,
+            start_message_id=ids[0],
+            end_message_id=ids[-1],
+            text=text,
+        )
+        s.add(note)
+        s.flush()
+        s.add_all(NoteSource(note_id=note.id, message_id=mid) for mid in ids)
+        search.index_note(s.connection(), note)
+        s.commit()
+        return refs.note(note.id)
+
+
+# --- search -------------------------------------------------------------------------------------
+
+SOURCES = ("records", "messages", "notes", "vectors")
+DEFAULT_SOURCES = ("records", "messages", "notes")
+
+
 def search_memory(
-    caller: MemoryCaller, query: str, *, store: str = "both", k: int = 5
+    caller: MemoryCaller,
+    query: str,
+    *,
+    store: str = "both",
+    k: int = 5,
+    sources: tuple[str, ...] = DEFAULT_SOURCES,
 ) -> list[Hit]:
-    """BM25 over records and this session's messages, fused by rank; ownership filters are
-    applied in SQL before ranking."""
+    """Fused BM25 search over memory records, raw session messages and episode notes, plus
+    optional vector candidates for messages.
+
+    Every candidate list is filtered by owner/store inside SQL before ranking. Raw messages are
+    always searched on their own list, so a detail a note omitted (or got wrong) is still
+    found. Message hits are deduplicated per turn; note hits say which messages they cover.
+    The total excerpt text is capped at MAX_RESULT_CHARS.
+    """
     if store not in ("session", "long_term", "both"):
         raise MemoryAccessError("store must be session, long_term or both")
+    unknown = set(sources) - set(SOURCES)
+    if unknown:
+        raise MemoryAccessError(f"unknown sources: {sorted(unknown)}")
     k = max(1, min(k, MAX_K))
+    pool = k * 3
     stores = {"session", "long_term"} if store == "both" else {store}
-    record_ids = search.search_records(caller.user_id, caller.session_id, stores, query, k=k)
-    message_ids = (
-        search.search_session_messages(caller.session_id, query, k=k) if "session" in stores else []
-    )
+    in_session = "session" in stores
+    settings = get_settings()
+
+    lists: dict[str, list[tuple[str, int]]] = {}
+    if "records" in sources:
+        ids = search.search_records(caller.user_id, caller.session_id, stores, query, k=pool)
+        lists["bm25:records"] = [("record", i) for i in ids]
+    if "messages" in sources and in_session:
+        ids = search.search_session_messages(caller.session_id, query, k=pool)
+        lists["bm25:messages"] = [("message", i) for i in ids]
+    if "notes" in sources and in_session:
+        ids = search.search_notes(caller.user_id, caller.session_id, query, k=pool)
+        lists["bm25:notes"] = [("note", i) for i in ids]
+    if "vectors" in sources and in_session:
+        ids = search.vector_session_messages(
+            caller.session_id, query, k=pool, max_distance=settings.retrieval_max_distance
+        )
+        lists["vectors:messages"] = [("message", i) for i in ids]
+
     scores: dict[tuple[str, int], float] = {}
-    for kind, ids in (("record", record_ids), ("message", message_ids)):
-        for rank, id_ in enumerate(ids):
-            scores[(kind, id_)] = 1.0 / (60 + rank + 1)
+    found_by: dict[tuple[str, int], list[str]] = {}
+    for name, items in lists.items():
+        for rank, item in enumerate(items):
+            scores[item] = scores.get(item, 0.0) + 1.0 / (60 + rank + 1)
+            found_by.setdefault(item, []).append(name)
+
     hits: list[Hit] = []
+    seen_turns: set[int] = set()
+    used = 0
     with session() as s:
-        for kind, id_ in sorted(scores, key=lambda key: -scores[key])[:k]:
+        for kind, id_ in sorted(scores, key=lambda key: -scores[key]):
+            if len(hits) >= k:
+                break
+            via = tuple(found_by[(kind, id_)])
+            hit = None
             if kind == "record" and (r := _visible_record(s, caller, id_)):
-                hits.append(
-                    Hit(
-                        refs.rec(r.id),
-                        "record",
-                        str(r.store.value),
-                        _clip(r.text, MAX_EXCERPT),
-                        r.superseded_at is None,
-                        r.created_at,
-                    )
+                hit = Hit(
+                    refs.rec(r.id),
+                    "record",
+                    str(r.store.value),
+                    _clip(r.text, MAX_EXCERPT),
+                    r.superseded_at is None,
+                    r.created_at,
+                    via,
                 )
             elif kind == "message" and (m := _visible_message(s, caller, id_)):
+                if m.turn in seen_turns:
+                    continue  # one hit per turn: the best-ranked side of it
+                seen_turns.add(m.turn)
                 who = "user" if m.role == Role.USER else "assistant"
-                hits.append(
-                    Hit(
-                        refs.msg(m.id),
-                        "message",
-                        "session",
-                        f"{who}: {_clip(m.text, MAX_EXCERPT)}",
-                        True,
-                        m.created_at,
-                    )
+                hit = Hit(
+                    refs.msg(m.id),
+                    "message",
+                    "session",
+                    f"{who}: {_clip(m.text, MAX_EXCERPT)}",
+                    True,
+                    m.created_at,
+                    via,
+                    turn=m.turn,
                 )
+            elif kind == "note" and (n := _visible_note(s, caller, id_)):
+                covered = _note_covers(s, n.id)
+                span = f"{refs.msg(covered[0])}..{refs.msg(covered[-1])}"
+                hit = Hit(
+                    refs.note(n.id),
+                    "note",
+                    "session",
+                    _clip(n.text, MAX_EXCERPT),
+                    True,
+                    n.created_at,
+                    via,
+                    covers=f"{span} ({len(covered)} messages)",
+                )
+            if hit is None:
+                continue
+            if used + len(hit.excerpt) > MAX_RESULT_CHARS:
+                break
+            used += len(hit.excerpt)
+            hits.append(hit)
     return hits
