@@ -409,3 +409,15 @@ def reindex_missing() -> dict[str, int]:
 def repair_once(engine: Engine) -> dict[str, int]:
     """Run `reindex_missing` once per database per process (startup self-healing)."""
     return reindex_missing()
+
+
+def delete_index_rows(conn, *, messages: set[int], records: set[int], notes: set[int]) -> None:
+    """Remove index rows of deleted items on the caller's open transaction (used by forget)."""
+    vec_table = _ensure_vec(_engine(), get_embedder().dim)
+    for mid in messages:
+        conn.exec_driver_sql("DELETE FROM message_fts WHERE rowid = ?", (mid,))
+        conn.exec_driver_sql(f"DELETE FROM {vec_table} WHERE rowid = ?", (mid,))
+    for rid in records:
+        conn.exec_driver_sql("DELETE FROM record_fts WHERE rowid = ?", (rid,))
+    for nid in notes:
+        conn.exec_driver_sql("DELETE FROM note_fts WHERE rowid = ?", (nid,))

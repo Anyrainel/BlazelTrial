@@ -13,6 +13,7 @@ from pydantic_ai import RunContext
 from chatbot.capabilities.memory import subagent
 from chatbot.capabilities.registry import capability
 from chatbot.memory import records
+from chatbot.memory.forget import forget_values
 from chatbot.memory.records import MemoryAccessError, MemoryCaller
 
 
@@ -117,6 +118,25 @@ def update_memory(ctx: RunContext, record: str, text: str, sources: list[str] | 
     return _shown(view) + f" (replaces {record})"
 
 
+def forget(ctx: RunContext, values: list[str]) -> str:
+    """Permanently delete information the user asked to forget, from every conversation.
+
+    First use ask_memory to find how it was actually written, then pass each distinctive
+    variant (e.g. the full address, the street line, the postcode). Values under 5 characters
+    are refused. Everything containing a value is deleted, plus anything derived from it.
+
+    Args:
+        values: exact strings to erase, e.g. ["27 Larkspur Lane, Apt 4B", "Larkspur Lane"].
+    """
+    report = forget_values(ctx.deps.user_id, values, compact=False)
+    ctx.deps.outputs.setdefault("forget", []).extend(values)  # scrubbed again after the turn
+    note = f" Ignored as too short: {len(report.rejected)}." if report.rejected else ""
+    return (
+        f"Forgotten: removed or redacted {report.total()} stored item(s).{note} "
+        "Do not repeat the forgotten information in your reply or in any message."
+    )
+
+
 def read_memory(ctx: RunContext, ref: str) -> str:
     """Read one item by ref: a source cited by ask_memory, or a tool result saved out of this
     conversation's context (out:...) or its checkpoint (ckpt:...).
@@ -138,4 +158,5 @@ CAPABILITY = capability(
     remember,
     update_memory,
     read_memory,
+    forget,
 )

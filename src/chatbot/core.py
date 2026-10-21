@@ -20,8 +20,8 @@ from pydantic_ai.models import ModelRequestParameters
 from chatbot.agent.agent import ChatDeps, get_agent, reply_text, static_prompt_tokens
 from chatbot.agent.budget import BudgetExceededError, call_context, estimate_tokens
 from chatbot.config import get_settings
+from chatbot.memory import forget, notes, refs, search
 from chatbot.memory import messages as store
-from chatbot.memory import notes, refs, search
 from chatbot.memory.db import get_engine
 from chatbot.memory.models import Source
 
@@ -97,8 +97,9 @@ def _window(thread_id: str, turn: int, scale: float) -> store.HistoryWindow:
         budget = budget // 2 if budget > 200 else 0
 
 
-async def _reply(user_id: str, thread_id: str, user_msg) -> tuple[str, str]:
-    """Run the chat agent for a stored user message; returns (reply, run JSON)."""
+async def _reply(user_id: str, thread_id: str, user_msg) -> tuple[str, str, list[str]]:
+    """Run the chat agent for a stored user message; returns (reply, run JSON, values the
+    turn asked to forget)."""
     deps = None
     for scale in _RETRY_SCALES:
         window = _window(thread_id, user_msg.turn, scale)
@@ -119,8 +120,10 @@ async def _reply(user_id: str, thread_id: str, user_msg) -> tuple[str, str]:
             logger.warning("chat context refused (%s); retrying smaller", exc)
     # A tool may fix the reply (e.g. a validated LinkedIn post) so the model can't alter it.
     reply = deps.outputs.get("reply") or reply_text(result)
+    forgotten = deps.outputs.get("forget", [])
+    reply = forget.redact(reply, forgotten)  # never echo what was just forgotten
     stored = _for_storage(result.new_messages(), user_msg.text)
-    return reply, ModelMessagesTypeAdapter.dump_json(stored).decode()
+    return reply, ModelMessagesTypeAdapter.dump_json(stored).decode(), forgotten
 
 
 async def _handle(
@@ -145,8 +148,12 @@ async def _handle(
     )
     search.index(rows)
     if generate:
-        reply, run_json = await _reply(user_id, thread_id, rows[0])
+        reply, run_json, forgotten = await _reply(user_id, thread_id, rows[0])
         search.index([store.add_reply(rows[0], reply, run_messages_json=run_json)])
+        if forgotten:
+            # This turn's own run (tool args, memory answers) can hold the values: sweep again
+            # now that it is stored, then purge the bytes from disk.
+            forget.forget_values(user_id, forgotten)
     await _upkeep(thread_id)
     return reply
 
