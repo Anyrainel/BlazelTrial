@@ -85,6 +85,9 @@ sentence with a placeholder; spelling is correct either way.
   provider count inside the hook (deferred per PLAN: estimation precision is a follow-up).
 - R15. Replies sometimes cite internal turn numbers ("my earlier answer in turn 506") because
   snippets are labelled by turn; label by date instead.
+- R16. Paraphrase recall without notes: deterministic tests use the hash embedder, which has no
+  semantics. Measure raw BM25 vs + notes vs + fastembed vectors on the 500-turn fixture before
+  deciding the default `sources` (PLAN sequence 6).
 - R9. Schema changes are not migrated: delete `.state/state.db` after pulling (pre-release).
 
 ## Where the AI was wrong
@@ -161,3 +164,4 @@ sentence with a placeholder; spelling is correct either way.
 | 2026-10-21 | | M5: docs generator, passage search, map-reduce notes, doc tools; scenario 3 passes live |
 | 2026-10-21 | | M6: capability registry, send_message, LinkedIn writer + validator; scenario 7 passes live |
 | 2026-10-21 | | Memory refactor step 1: contracts doc + storage layer (records, sources, versions, ownership, repair, migration) |
+| 2026-10-21 | | Memory refactor step 2: episode notes, fused source+note search, deterministic retrieval tests |

@@ -42,7 +42,8 @@ uv run chatbot send USER THREAD "text"     # one-shot call to the core
 uv run chatbot ingest FILE.jsonl           # load {"user","assistant"} lines into slack-dm via core
 uv run chatbot capabilities                # capabilities + their per-request token cost
 uv run chatbot migrate-memory              # copy legacy facts into versioned memory records
-uv run chatbot reindex                     # index messages/records missing from search
+uv run chatbot reindex                     # index messages/records/notes missing from search
+uv run chatbot memory-search S "q"         # diagnostics: fused memory search as session S
 uv run chatbot serve                       # FastAPI: POST /send, web UI at /
 uv run chatbot slack                       # Slack app (Socket Mode)
 uv run python -m scenarios                 # scenario script, prints PASS/FAIL

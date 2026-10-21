@@ -92,3 +92,26 @@ def reindex() -> None:
     from chatbot.memory.search import reindex_missing
 
     typer.echo(reindex_missing())
+
+
+@app.command("memory-search")
+def memory_search(
+    session_id: str,
+    query: str,
+    sources: str = typer.Option(
+        "records,messages,notes", help="Comma list: records,messages,notes,vectors"
+    ),
+    store: str = typer.Option("both", help="session | long_term | both"),
+    k: int = typer.Option(5),
+    user: str = typer.Option(None, help="User id; defaults to DEFAULT_USER_ID."),
+) -> None:
+    """Diagnostics: run the memory store's fused search as a given session would."""
+    from chatbot.memory.records import MemoryCaller, search_memory
+
+    caller = MemoryCaller(user or get_settings().default_user_id, session_id)
+    hits = search_memory(caller, query, store=store, k=k, sources=tuple(sources.split(",")))
+    for h in hits:
+        extra = f" covers {h.covers}" if h.covers else (f" turn {h.turn}" if h.turn else "")
+        typer.echo(f"{h.ref:<10} {h.type:<8} {'/'.join(h.found_by)}{extra}\n    {h.excerpt}")
+    if not hits:
+        typer.echo("(no hits)")

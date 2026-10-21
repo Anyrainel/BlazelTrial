@@ -76,10 +76,20 @@ Ids are never reused. Malformed or unknown refs get the same "not found" reply.
 ### Low-level handlers (subagent tools; bounded)
 | Handler | Returns | Bounds |
 |---|---|---|
-| `search(caller, query, store, k)` | hits: ref, type, store, excerpt, current/superseded, created_at | k ≤ 10; excerpt ≤ 300 chars |
-| `read(caller, ref)` | text (≤ 2,000 chars), metadata, version links, sources / covered messages | one item |
+| `search(caller, query, store, k, sources)` | hits: ref, type (record/message/note), store, excerpt, current, created_at, `found_by`, turn (messages), covers (notes) | k ≤ 10; excerpt ≤ 300 chars; ≤ 2,400 excerpt chars in total; one message hit per turn |
+| `read(caller, ref)` | text (≤ 2,000 chars), metadata, version links, sources; notes: exact covered `msg:` refs | one item |
 | `expand(caller, msg_ref, before, after)` | adjacent messages of the same session | ≤ 5 each side |
 | `versions(caller, rec_ref)` | the record's chain, oldest → newest | ≤ 20 |
+
+`sources` selects candidate lists for diagnostics and evals: `records`, `messages`, `notes`
+(default) and optional `vectors` (message embeddings within the distance cut-off). Each list is
+ranked separately (BM25 per FTS table) and fused by reciprocal rank; `found_by` names the lists
+that returned a hit. CLI: `chatbot memory-search SESSION "query" --sources messages,notes`.
+
+### Note writer (maintenance only, never a model tool)
+`add_note(user_id, session_id, message_ids, text)`: one contiguous run of the session's own
+messages, not overlapping any existing note, text ≤ 1,500 chars; note row, `NoteSource` rows and
+FTS row commit in one transaction under the write lock.
 
 ## 6. Write path: `remember` / `update_memory`
 - **Arguments**: `store`, `kind`, `key`, `text`, `sources`, plus `supersedes` for updates.
