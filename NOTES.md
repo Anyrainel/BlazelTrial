@@ -33,6 +33,12 @@ memory. The agent saved facts/preferences itself, superseded British -> American
 memory_search), all within budget, max 6,426 input tokens. Historical passes above describe the
 old injection design.
 
+Forget (PLAN step 5, Claude, 500-turn history, 2026-10-21): scenario 6 PASS. Address (turn 100)
+absent from replies, from send_message (none sent; the bot asked for the address instead) and
+from the database files on disk. 54 calls, all within budget, max 6,352 input tokens. Recall gaps
+seen: "Where do I live?" missed the "New address is..." message (vocabulary gap) and the bot didn't
+look up the partner's name before asking; subagent prompt now rewords before not_found.
+
 ## Assumptions
 - A5. 2026-10-21 memory plan: persisted source evidence + source-linked summary notes, searched
   together through BM25 behind a bounded read-only memory subagent. Evaluate existing vectors
@@ -94,9 +100,9 @@ old injection design.
   provider count inside the hook (deferred per PLAN: estimation precision is a follow-up).
 - R15. Replies sometimes cite internal turn numbers ("my earlier answer in turn 506") because
   snippets are labelled by turn; label by date instead.
-- R16. Paraphrase recall without notes: deterministic tests use the hash embedder, which has no
-  semantics. Measure raw BM25 vs + notes vs + fastembed vectors on the 500-turn fixture before
-  deciding the default `sources` (PLAN sequence 6).
+- R16. Measured (scripts/eval_retrieval.py): 12/14 recall@5 for every configuration; notes and
+  vectors added nothing on this set. Misses are paraphrases ("midday"->lunch, "morning
+  sync"->standup). Default stays BM25; vectors optional (D36).
 - R17. ask_memory is used on most turns (policy: check preferences before drafting, recall
   before personal answers): ~4.6 subagent requests per chat request live. Measure and tune in
   PLAN step 6 (fewer steps per question, skip preference checks for non-drafting turns, cache
@@ -186,3 +192,4 @@ old injection design.
 | 2026-10-21 | | Memory refactor step 2: episode notes, fused source+note search, deterministic retrieval tests |
 | 2026-10-21 | | Memory refactor step 3: ask_memory subagent, write tools, injection/extraction removed; S1/S4/S5 live |
 | 2026-10-21 | | Memory refactor step 4: doc passages in search, in-run compaction + checkpoints, mutation keys, recovery tests |
+| 2026-10-21 | | Step 5: forget sweep + tool + disk purge (S6 live PASS); step 6 started: scenario runner, retrieval eval |

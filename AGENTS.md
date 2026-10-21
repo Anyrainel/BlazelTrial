@@ -46,7 +46,8 @@ uv run chatbot reindex                     # index messages/records/notes missin
 uv run chatbot memory-search S "q"         # diagnostics: fused memory search as session S
 uv run chatbot serve                       # FastAPI: POST /send, web UI at /
 uv run chatbot slack                       # Slack app (Socket Mode)
-uv run python -m scenarios                 # scenario script, prints PASS/FAIL
+uv run python -m scenarios                 # scenario script (real LLM), prints PASS/FAIL
+uv run python scripts/eval_retrieval.py    # recall@5 of memory search configs (no LLM)
 uv run pytest -q                           # unit tests, offline
 uv run ruff check . && uv run ruff format .
 cd web && npm install && npm run dev       # frontend dev (proxies to :8000); npm run build → web/dist

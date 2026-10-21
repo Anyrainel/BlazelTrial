@@ -113,7 +113,15 @@ reads any of these back with `read_memory(ref)` (bounded; session-private).
   `ask_memory` before answering personal-history questions, and record explicit durable updates
   before replying. Draft-local instructions are not written to any store.
 
-## 7. Forget dependencies (implemented in PLAN step 5)
+## 7. Forget (implemented in PLAN step 5)
+`forget(values)` tool → `memory/forget.py:forget_values(user_id, values)`: values ≥ 5 chars,
+matched case- and whitespace-insensitively, user-wide, under the write lock, one transaction.
+The agent first locates how the information was written (`ask_memory`) and passes each
+distinctive variant. After the turn is stored, the core sweeps again (the turn's own run holds
+the values in tool args and memory answers), redacts the reply, then optimizes FTS, truncates
+the WAL and VACUUMs; the scenario check greps the database files on disk.
+
+Dependencies:
 Forget removes matching evidence (`msg:`, `psg:` refs held by the session) and every derived
 item. `RecordSource` and the note→message links say what to invalidate: records, versions,
 notes, checkpoints, index rows, outbound messages, serialized tool exchanges and cached
