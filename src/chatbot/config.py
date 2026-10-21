@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     summary_chunk_turns: int = 25
     summary_keep_recent_turns: int = 16
 
+    # Slack (Socket Mode). Every DM maps to DEFAULT_USER_ID; set SLACK_ALLOWED_USER (a Slack
+    # user id like U0123) to ignore DMs from anyone else.
+    slack_bot_token: SecretStr | None = None
+    slack_app_token: SecretStr | None = None
+    slack_allowed_user: str | None = None
+
+    # HTTP surface
+    http_host: str = "127.0.0.1"
+    http_port: int = 8000
+
     default_user_id: str = "me"
     state_dir: Path = Path(".state")
 

@@ -106,7 +106,9 @@ def get_search_agent() -> Agent[SearchDeps, MemoryAnswer]:
         deps_type=SearchDeps,
         output_type=MemoryAnswer,
         instructions=(Path(__file__).parent / "search_agent.md").read_text(encoding="utf-8"),
-        model_settings={"anthropic_cache": False},
+        # Each step of one question resends the previous steps: automatic caching makes those
+        # reads (measured: 604k uncached subagent input tokens in one full scenario run).
+        model_settings={"anthropic_cache": True},
     )
 
     @agent.tool

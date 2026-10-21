@@ -115,3 +115,30 @@ def memory_search(
         typer.echo(f"{h.ref:<10} {h.type:<8} {'/'.join(h.found_by)}{extra}\n    {h.excerpt}")
     if not hits:
         typer.echo("(no hits)")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option(None, help="Defaults to HTTP_HOST."),
+    port: int = typer.Option(None, help="Defaults to HTTP_PORT."),
+) -> None:
+    """HTTP API (POST /send, /threads) and, if built, the web UI at /."""
+    import uvicorn
+
+    settings = get_settings()
+    uvicorn.run(
+        "chatbot.surfaces.http:app",
+        host=host or settings.http_host,
+        port=port or settings.http_port,
+    )
+
+
+@app.command()
+def slack() -> None:
+    """Connect the Slack app (Socket Mode) and answer DMs as the `slack-dm` thread."""
+    import logging
+
+    from chatbot.surfaces.slack_app import run
+
+    logging.basicConfig(level=logging.INFO)
+    run()
