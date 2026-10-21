@@ -17,6 +17,7 @@ from chatbot.config import get_settings
 from chatbot.memory import refs, search
 from chatbot.memory.db import session
 from chatbot.memory.models import (
+    Checkpoint,
     DocPassage,
     DocRef,
     EpisodeNote,
@@ -27,6 +28,7 @@ from chatbot.memory.models import (
     RecordSource,
     Role,
     Store,
+    ToolOutput,
     utcnow,
 )
 
@@ -39,6 +41,7 @@ MAX_K = 10
 MAX_EXPAND = 5
 MAX_VERSIONS = 20
 MAX_NOTE = 1500
+MAX_SAVED_READ = 6000  # chars of a saved tool output returned by one read
 MAX_RESULT_CHARS = 2400  # total excerpt text one search returns
 
 _write_lock = threading.Lock()
@@ -102,9 +105,19 @@ class NoteView:
 
 
 @dataclass(frozen=True)
+class SavedView:
+    """A saved tool output (`out:`) or run checkpoint (`ckpt:`)."""
+
+    ref: str
+    label: str
+    text: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class Hit:
     ref: str
-    type: str  # "record" | "message" | "note"
+    type: str  # "record" | "message" | "note" | "passage"
     store: str
     excerpt: str
     current: bool
@@ -159,6 +172,13 @@ def _note_covers(s: Session, note_id: int) -> list[int]:
     )
 
 
+def _visible_saved(s: Session, caller: MemoryCaller, model, id_: int):
+    row = s.get(model, id_)
+    if row is None or row.user_id != caller.user_id or row.session_id != caller.session_id:
+        return None
+    return row
+
+
 def _visible_passage(s: Session, caller: MemoryCaller, pid: int) -> DocPassage | None:
     p = s.get(DocPassage, pid)
     if p is None:
@@ -182,7 +202,11 @@ def _resolve_excerpt(s: Session, caller: MemoryCaller, ref: str) -> str:
         return _clip(r.text, MAX_EXCERPT)
     if parsed.type == "note" and (n := _visible_note(s, caller, parsed.id)):
         return _clip(n.text, MAX_EXCERPT)
-    raise _not_found(ref)  # unknown, invisible, or a type not yet backed (ckpt:)
+    if parsed.type == "out" and (o := _visible_saved(s, caller, ToolOutput, parsed.id)):
+        return _clip(o.content, MAX_EXCERPT)
+    if parsed.type == "ckpt" and (c := _visible_saved(s, caller, Checkpoint, parsed.id)):
+        return _clip(c.text, MAX_EXCERPT)
+    raise _not_found(ref)
 
 
 # --- views ------------------------------------------------------------------------------------
@@ -330,6 +354,12 @@ def read(caller: MemoryCaller, ref: str) -> RecordView | MessageView | PassageVi
         if parsed.type == "note" and (n := _visible_note(s, caller, parsed.id)):
             covers = [refs.msg(mid) for mid in _note_covers(s, n.id)]
             return NoteView(ref, _clip(n.text, MAX_READ_CHARS), covers, n.created_at)
+        if parsed.type == "out" and (o := _visible_saved(s, caller, ToolOutput, parsed.id)):
+            return SavedView(
+                ref, f"saved {o.tool_name} result", o.content[:MAX_SAVED_READ], o.created_at
+            )
+        if parsed.type == "ckpt" and (c := _visible_saved(s, caller, Checkpoint, parsed.id)):
+            return SavedView(ref, "run checkpoint", c.text[:MAX_SAVED_READ], c.updated_at)
     raise _not_found(ref)
 
 
@@ -382,6 +412,41 @@ def versions(caller: MemoryCaller, ref: str) -> list[RecordView]:
         return [_view(s, x, with_sources=False) for x in chain[-MAX_VERSIONS:]]
 
 
+# --- saved tool outputs and checkpoints (written by the context fitter) -------------------------
+
+
+def save_tool_output(caller: MemoryCaller, tool_call_id: str, tool_name: str, content: str) -> str:
+    """Persist a completed tool result; idempotent per tool call. Returns its `out:` ref."""
+    with _write_lock, session() as s:
+        row = s.exec(select(ToolOutput).where(ToolOutput.tool_call_id == tool_call_id)).first()
+        if row is None:
+            row = ToolOutput(
+                user_id=caller.user_id,
+                session_id=caller.session_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                content=content,
+            )
+            s.add(row)
+            s.commit()
+        return f"out:{row.id}"
+
+
+def save_checkpoint(caller: MemoryCaller, run_id: str, text: str) -> str:
+    """Create or refresh the checkpoint of one run. Returns its `ckpt:` ref."""
+    with _write_lock, session() as s:
+        row = s.exec(select(Checkpoint).where(Checkpoint.run_id == run_id)).first()
+        if row is None:
+            row = Checkpoint(
+                user_id=caller.user_id, session_id=caller.session_id, run_id=run_id, text=text
+            )
+        else:
+            row.text, row.updated_at = text, utcnow()
+        s.add(row)
+        s.commit()
+        return f"ckpt:{row.id}"
+
+
 # --- notes (written by maintenance, not by the model) -------------------------------------------
 
 
@@ -430,8 +495,8 @@ def add_note(user_id: str, session_id: str, message_ids: list[int], text: str) -
 
 # --- search -------------------------------------------------------------------------------------
 
-SOURCES = ("records", "messages", "notes", "vectors")
-DEFAULT_SOURCES = ("records", "messages", "notes")
+SOURCES = ("records", "messages", "notes", "passages", "vectors")
+DEFAULT_SOURCES = ("records", "messages", "notes", "passages")
 
 
 def search_memory(
@@ -471,6 +536,13 @@ def search_memory(
     if "notes" in sources and in_session:
         ids = search.search_notes(caller.user_id, caller.session_id, query, k=pool)
         lists["bm25:notes"] = [("note", i) for i in ids]
+    if "passages" in sources and in_session:
+        with session() as s:
+            doc_ids = list(
+                s.exec(select(DocRef.doc_id).where(DocRef.thread_id == caller.session_id)).all()
+            )
+        ids = search.search_passages_bm25(doc_ids, query, k=pool)
+        lists["bm25:passages"] = [("passage", i) for i in ids]
     if "vectors" in sources and in_session:
         ids = search.vector_session_messages(
             caller.session_id, query, k=pool, max_distance=settings.retrieval_max_distance
@@ -517,6 +589,16 @@ def search_memory(
                     m.created_at,
                     via,
                     turn=m.turn,
+                )
+            elif kind == "passage" and (p := _visible_passage(s, caller, id_)):
+                hit = Hit(
+                    f"psg:{p.id}",
+                    "passage",
+                    "session",
+                    f"[{p.doc_id} § {p.section}] {_clip(p.text, MAX_EXCERPT)}",
+                    True,
+                    utcnow(),
+                    via,
                 )
             elif kind == "note" and (n := _visible_note(s, caller, id_)):
                 covered = _note_covers(s, n.id)

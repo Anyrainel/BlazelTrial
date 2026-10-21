@@ -207,6 +207,21 @@ def delete_passages(passage_ids: list[int]) -> None:
             conn.exec_driver_sql(f"DELETE FROM {table} WHERE rowid = ?", (pid,))
 
 
+def search_passages_bm25(doc_ids: list[str], query: str, *, k: int) -> list[int]:
+    """Passage ids of the given documents matching `query` (BM25), best first."""
+    q = fts_query(query)
+    if not q or not doc_ids:
+        return []
+    marks = ",".join("?" for _ in doc_ids)
+    with _engine().begin() as conn:
+        rows = conn.exec_driver_sql(
+            f"SELECT rowid FROM doc_fts WHERE doc_fts MATCH ? AND doc_id IN ({marks}) "
+            "ORDER BY bm25(doc_fts) LIMIT ?",
+            (q, *doc_ids, k),
+        ).all()
+    return [pid for (pid,) in rows]
+
+
 def search_passages(doc_id: str, query: str, *, k: int) -> list[int]:
     """Passage ids of `doc_id` best matching `query` (keyword + vector, rank-fused)."""
     engine = _engine()

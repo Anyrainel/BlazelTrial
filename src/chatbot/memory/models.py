@@ -127,6 +127,7 @@ class OutboundMessage(SQLModel, table=True):
     recipient: str
     text: str
     created_at: datetime = Field(default_factory=utcnow)
+    idempotency_key: str | None = Field(default=None, unique=True)
 
 
 class Store(StrEnum):
@@ -190,3 +191,28 @@ class NoteSource(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     note_id: int = Field(foreign_key="episodenote.id", index=True)
     message_id: int = Field(index=True)
+
+
+class ToolOutput(SQLModel, table=True):
+    """A completed tool result moved out of a long run's context (ref `out:<id>`)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    session_id: str = Field(index=True)
+    tool_call_id: str = Field(unique=True)
+    tool_name: str
+    content: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Checkpoint(SQLModel, table=True):
+    """Working state of one run, written when its context had to be compacted (ref `ckpt:<id>`):
+    the goal, completed tool calls and where their full results are stored."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    session_id: str = Field(index=True)
+    run_id: str = Field(unique=True)
+    text: str
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

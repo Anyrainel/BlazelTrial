@@ -4,6 +4,8 @@ The caller (user + session) and the current message come from trusted run depend
 model only supplies the question or the record content. Writes are idempotent per tool call.
 """
 
+import hashlib
+import json
 from typing import Literal
 
 from pydantic_ai import RunContext
@@ -25,6 +27,14 @@ def _sources(ctx: RunContext, sources: list[str] | None) -> list[str]:
     if current and current not in cited:
         cited.insert(0, current)
     return cited
+
+
+def mutation_key(ctx: RunContext, tool: str, *parts: object) -> str:
+    """Idempotency key for a write: the turn + tool + arguments. A retried run (new tool-call
+    ids) that repeats the same write gets the original result instead of a duplicate."""
+    digest = hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()
+    turn = getattr(ctx.deps, "current_msg_ref", None) or ctx.tool_call_id
+    return f"{turn}|{tool}|{digest[:24]}"
 
 
 def _shown(view: records.RecordView) -> str:
@@ -72,7 +82,7 @@ def remember(
             key=key,
             text=text,
             sources=_sources(ctx, sources),
-            idempotency_key=ctx.tool_call_id,
+            idempotency_key=mutation_key(ctx, "remember", store, kind, key, text),
         )
     except MemoryAccessError as exc:
         return f"Not saved: {exc}"
@@ -100,11 +110,24 @@ def update_memory(ctx: RunContext, record: str, text: str, sources: list[str] | 
             text=text,
             sources=_sources(ctx, sources),
             supersedes=record,
-            idempotency_key=ctx.tool_call_id,
+            idempotency_key=mutation_key(ctx, "update_memory", record, text),
         )
     except MemoryAccessError as exc:
         return f"Not saved: {exc}"
     return _shown(view) + f" (replaces {record})"
+
+
+def read_memory(ctx: RunContext, ref: str) -> str:
+    """Read one item by ref: a source cited by ask_memory, or a tool result saved out of this
+    conversation's context (out:...) or its checkpoint (ckpt:...).
+
+    Args:
+        ref: e.g. "msg:40", "rec:3", "note:2", "psg:17", "out:5", "ckpt:1".
+    """
+    try:
+        return subagent.format_item(records.read(caller_of(ctx), ref))
+    except MemoryAccessError as exc:
+        return f"Error: {exc}"
 
 
 CAPABILITY = capability(
@@ -114,4 +137,5 @@ CAPABILITY = capability(
     ask_memory,
     remember,
     update_memory,
+    read_memory,
 )

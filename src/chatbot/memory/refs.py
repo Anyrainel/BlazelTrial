@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-RefType = Literal["msg", "rec", "psg", "note", "ckpt"]
-_REF = re.compile(r"^(msg|rec|psg|note|ckpt):([1-9]\d{0,17})$")
+RefType = Literal["msg", "rec", "psg", "note", "ckpt", "out"]
+_REF = re.compile(r"^(msg|rec|psg|note|ckpt|out):([1-9]\d{0,17})$")
 EVIDENCE: frozenset[str] = frozenset({"msg", "psg"})
 
 

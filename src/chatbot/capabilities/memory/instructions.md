@@ -15,3 +15,5 @@ facts, people, preferences and past decisions are reached only through these too
 - `sources` default to the user's current message; add refs from ask_memory results when a
   record rests on earlier messages.
 - Refs like rec:12 or msg:40 are internal: use them in tool calls, never show them to the user.
+- In long tasks, older tool results may be replaced by "[saved as out:N …]"; call
+  `read_memory("out:N")` if you need one again (a checkpoint ckpt:N lists what was done).
