@@ -159,7 +159,10 @@ def test_only_relevant_facts_are_shown_within_budget():
 
 def test_context_shrinks_instead_of_failing_on_huge_input(monkeypatch):
     load_history(120)
-    monkeypatch.setenv("MAX_INPUT_TOKENS", "4500")
+    # Estimate mode keeps assembly and pre-flight on the same yardstick (fake models can't count).
+    # 7,000: the full context must shrink, but the minimal one still fits.
+    monkeypatch.setenv("TOKEN_COUNT_MODE", "estimate")
+    monkeypatch.setenv("MAX_INPUT_TOKENS", "7000")
     get_settings.cache_clear()
     rec = Recorder()
     with get_agent().override(model=rec.model()):

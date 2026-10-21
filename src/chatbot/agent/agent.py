@@ -1,6 +1,7 @@
 """The PydanticAI chat agent used by `core.send()`."""
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from functools import cache
 
 from pydantic_ai import Agent, RunContext
@@ -11,7 +12,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from chatbot import prompts
 from chatbot.agent.history import fit_history
 from chatbot.agent.models import build_model
-from chatbot.capabilities import docs as doc_tools
+from chatbot.capabilities import registry
 from chatbot.config import get_settings
 from chatbot.memory import retrieve
 
@@ -23,20 +24,24 @@ class ChatDeps:
     preferences: str = ""  # standing instructions (stable, cacheable)
     summaries: str = ""  # summary block of turns before the replayed window
     docs: str = ""  # documents opened in this thread
+    # Set by tools during the run: a reply that must reach the user verbatim (e.g. a validated
+    # LinkedIn post), replacing the model's own wording. Mutable on purpose.
+    outputs: dict = field(default_factory=dict)
 
 
 @cache
 def get_agent() -> Agent[ChatDeps, str]:
     """Build the chat agent once. Tests swap the model with `get_agent().override(model=...)`.
 
-    Instruction order matters for prompt caching: the static system prompt first, then standing
+    Instruction order matters for prompt caching: the static system prompt and capability
+    instructions first, then standing
     preferences (change rarely), then summaries (change every chunk). Recent turns follow as
     message history; relevant facts and retrieved snippets ride in the current user message.
     """
     agent = Agent(
         build_model(get_settings()),
         deps_type=ChatDeps,
-        instructions=prompts.load("system"),
+        instructions=[prompts.load("system"), registry.instructions_block()],
         capabilities=[ProcessHistory(fit_history)],
         # Explicit breakpoints instead of automatic caching: one after tools + instructions,
         # one before the current message (see core._user_prompt). Automatic caching would also
@@ -57,7 +62,7 @@ def get_agent() -> Agent[ChatDeps, str]:
     def docs(ctx: RunContext[ChatDeps]) -> str:
         return ctx.deps.docs
 
-    doc_tools.register(agent)
+    registry.register_all(agent)
 
     @agent.tool
     def search_history(ctx: RunContext[ChatDeps], query: str) -> str:
@@ -84,3 +89,21 @@ def reply_text(result: AgentRunResult[str]) -> str:
         if isinstance(p, TextPart) and (p.provider_details or {}).get("phase") != "commentary"
     ]
     return "\n\n".join(t.strip() for t in texts if t.strip()) or result.output
+
+
+def tool_schema_tokens() -> int:
+    """Estimated tokens of every tool definition sent with each chat request."""
+    cpt = get_settings().estimate_chars_per_token
+    tools = get_agent()._function_toolset.tools.values()
+    chars = sum(
+        len(json.dumps({"n": t.name, "d": t.description, "p": t.tool_def.parameters_json_schema}))
+        for t in tools
+    )
+    return int(chars / cpt)
+
+
+def static_prompt_tokens() -> int:
+    """System prompt + capability instructions + tool schemas: sent with every chat request."""
+    cpt = get_settings().estimate_chars_per_token
+    static = prompts.load("system") + registry.instructions_block()
+    return int(len(static) / cpt) + tool_schema_tokens()

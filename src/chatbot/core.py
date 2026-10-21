@@ -18,7 +18,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import ModelRequestParameters
 
 from chatbot import prompts
-from chatbot.agent.agent import ChatDeps, get_agent, reply_text
+from chatbot.agent.agent import ChatDeps, get_agent, reply_text, static_prompt_tokens
 from chatbot.agent.budget import BudgetExceededError, call_context, estimate_tokens
 from chatbot.capabilities import docs as doc_tools
 from chatbot.config import get_settings
@@ -122,7 +122,7 @@ def _assemble(user_id: str, thread_id: str, text: str, scale: float = 1.0):
     settings = get_settings()
     cpt = settings.estimate_chars_per_token
     target = int(settings.context_target_tokens * scale)
-    system_tokens = len(prompts.load("system")) / cpt + settings.tool_overhead_tokens
+    system_tokens = static_prompt_tokens() + settings.tool_overhead_tokens
 
     def window_for(budget: int):
         return store.recent_history(
@@ -201,7 +201,8 @@ async def _handle(
                 if exc.stage != "preflight" or scale == _RETRY_SCALES[-1]:
                     raise
                 logger.warning("chat context refused (%s); retrying smaller", exc)
-        reply = reply_text(result)
+        # A tool may fix the reply (e.g. a validated LinkedIn post) so the model can't alter it.
+        reply = deps.outputs.get("reply") or reply_text(result)
         stored = _restore_user_text(result.new_messages(), prompt, text)
         run_json = ModelMessagesTypeAdapter.dump_json(stored).decode()
 

@@ -60,3 +60,19 @@ def ingest(
             count += 1
     core_flush(user_id, thread)
     typer.echo(f"ingested {count} turns into {thread}")
+
+
+@app.command()
+def capabilities() -> None:
+    """List capabilities and the tokens they add to every chat request (estimated)."""
+    from chatbot.capabilities import registry
+
+    total = 0
+    for row in registry.cost_report():
+        cost = row["instructions_tokens"] + row["schema_tokens"]
+        total += cost
+        typer.echo(
+            f"{row['name']:<12} instructions ~{row['instructions_tokens']:>4}  "
+            f"tools ~{row['schema_tokens']:>4}  total ~{cost:>4}"
+        )
+    typer.echo(f"{'all':<12} ~{total} tokens per chat request")

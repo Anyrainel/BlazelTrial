@@ -63,9 +63,10 @@ class Settings(BaseSettings):
     # Relevant facts shown with the current message.
     facts_token_budget: int = 600
     # Chat context is assembled to at most this share of MAX_INPUT_TOKENS (estimate), leaving
-    # headroom for estimate error; plus a fixed allowance for tool definitions.
+    # headroom for estimate error; plus a margin for request framing (tool schemas and
+    # capability instructions are measured, not guessed).
     context_fill_ratio: float = 0.8
-    tool_overhead_tokens: int = 300
+    tool_overhead_tokens: int = 150
 
     # Documents (fetch_doc): read from DOCS_DIR (default: STATE_DIR/docs).
     docs_dir: Path | None = None

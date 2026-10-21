@@ -117,3 +117,13 @@ class DocRef(SQLModel, table=True):
     thread_id: str = Field(index=True)
     doc_id: str
     last_used_at: datetime = Field(default_factory=utcnow)
+
+
+class OutboundMessage(SQLModel, table=True):
+    """A `send_message` call. Nothing is really sent; this log is the effect."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    thread_id: str = Field(index=True)
+    recipient: str
+    text: str
+    created_at: datetime = Field(default_factory=utcnow)

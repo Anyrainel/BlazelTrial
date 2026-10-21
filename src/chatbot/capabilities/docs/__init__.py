@@ -2,9 +2,10 @@
 
 from datetime import UTC, datetime
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import RunContext
 from sqlmodel import col, select
 
+from chatbot.capabilities.registry import capability
 from chatbot.config import get_settings
 from chatbot.docs_reader import reader
 from chatbot.memory.db import session
@@ -80,6 +81,6 @@ def search_doc(ctx: RunContext, doc_id: str, query: str) -> str:
     return "\n\n".join(f"[{doc.doc_id} § {p.section}]\n{p.text}" for p in found)
 
 
-def register(agent: Agent) -> None:
-    agent.tool(fetch_doc)
-    agent.tool(search_doc)
+CAPABILITY = capability(
+    "documents", "Read and search the user's documents.", __file__, fetch_doc, search_doc
+)

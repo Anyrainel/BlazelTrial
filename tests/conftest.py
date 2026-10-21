@@ -2,6 +2,7 @@ import pytest
 from pydantic_ai import models
 
 from chatbot.agent.agent import get_agent
+from chatbot.capabilities.linkedin import get_writer
 from chatbot.config import Settings, get_settings
 from chatbot.docs_reader.reader import get_mapper, get_reducer
 from chatbot.memory.db import get_engine
@@ -40,6 +41,7 @@ def _clear_caches() -> None:
         _ensure_doc_vec,
         get_mapper,
         get_reducer,
+        get_writer,
     ):
         fn.cache_clear()
 
