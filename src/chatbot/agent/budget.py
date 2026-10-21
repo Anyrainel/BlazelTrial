@@ -52,7 +52,11 @@ _call_context: ContextVar[CallContext] = ContextVar(
 
 @contextmanager
 def call_context(*, thread_id: str | None = None, purpose: str = "chat") -> Iterator[None]:
-    """Tag every model request made inside this block (shows up in the call log)."""
+    """Tag every model request made inside this block (shows up in the call log).
+
+    Without `thread_id`, the enclosing block's thread is kept (e.g. a tool's own model calls).
+    """
+    thread_id = thread_id if thread_id is not None else _call_context.get().thread_id
     token = _call_context.set(CallContext(thread_id=thread_id, purpose=purpose))
     try:
         yield

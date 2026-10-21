@@ -86,3 +86,34 @@ class Summary(SQLModel, table=True):
     end_turn: int = Field(index=True)
     text: str
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class DocNote(SQLModel, table=True):
+    """Distilled notes of one document version (map-reduce over chunks), computed once."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    doc_id: str = Field(index=True)
+    sha256: str = Field(index=True)
+    text: str
+    chunk_count: int
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class DocPassage(SQLModel, table=True):
+    """A ~1k-char passage of a document; indexed for `search_doc`."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    doc_id: str = Field(index=True)
+    sha256: str = Field(index=True)
+    idx: int
+    section: str
+    text: str
+
+
+class DocRef(SQLModel, table=True):
+    """A document opened in a thread, so "that plan" can be resolved later."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    thread_id: str = Field(index=True)
+    doc_id: str
+    last_used_at: datetime = Field(default_factory=utcnow)

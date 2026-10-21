@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     context_fill_ratio: float = 0.8
     tool_overhead_tokens: int = 300
 
+    # Documents (fetch_doc): read from DOCS_DIR (default: STATE_DIR/docs).
+    docs_dir: Path | None = None
+    doc_full_text_tokens: int = 1500  # smaller docs are returned whole
+    doc_chunk_tokens: int = 2500  # map step input size
+    doc_passage_chars: int = 1200  # search unit for search_doc
+    doc_search_token_budget: int = 1500
+    doc_note_concurrency: int = 4
+
     # Rolling summaries of turns that have scrolled out of the replayed window.
     summary_chunk_turns: int = 25
     summary_keep_recent_turns: int = 16  # never summarize the newest N turns
@@ -83,6 +91,12 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.state_path / "state.db"
+
+    @property
+    def docs_path(self) -> Path:
+        if self.docs_dir is None:
+            return self.state_path / "docs"
+        return self.docs_dir if self.docs_dir.is_absolute() else REPO_ROOT / self.docs_dir
 
     @property
     def models_path(self) -> Path:

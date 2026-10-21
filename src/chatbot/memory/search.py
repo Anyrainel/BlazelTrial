@@ -35,10 +35,25 @@ def create_fts(engine: Engine) -> None:
             "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5("
             "text, thread_id UNINDEXED, turn UNINDEXED, tokenize='porter unicode61')"
         )
+        conn.exec_driver_sql(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS doc_fts USING fts5("
+            "text, doc_id UNINDEXED, tokenize='porter unicode61')"
+        )
 
 
 def _vec_table(dim: int) -> str:
     return f"message_vec_{dim}"
+
+
+@cache
+def _ensure_doc_vec(engine: Engine, dim: int) -> str:
+    table = f"doc_vec_{dim}"
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            f"CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING vec0("
+            f"embedding float[{dim}] distance_metric=cosine, doc_id text)"
+        )
+    return table
 
 
 @cache
@@ -147,3 +162,70 @@ def delete(message_ids: list[int]) -> None:
         for mid in message_ids:
             conn.exec_driver_sql("DELETE FROM message_fts WHERE rowid = ?", (mid,))
             conn.exec_driver_sql(f"DELETE FROM {table} WHERE rowid = ?", (mid,))
+
+
+# --- document passages ---------------------------------------------------------------------
+
+
+def index_passages(passages: list[tuple[int, str, str]]) -> None:
+    """Index document passages given as (passage_id, doc_id, text)."""
+    if not passages:
+        return
+    engine = _engine()
+    embedder = get_embedder()
+    table = _ensure_doc_vec(engine, embedder.dim)
+    vectors = embedder.embed([text[:_EMBED_CHARS] for _, _, text in passages])
+    with engine.begin() as conn:
+        for (pid, doc_id, text), vec in zip(passages, vectors, strict=True):
+            conn.exec_driver_sql(
+                "INSERT INTO doc_fts(rowid, text, doc_id) VALUES (?, ?, ?)", (pid, text, doc_id)
+            )
+            conn.exec_driver_sql(
+                f"INSERT INTO {table}(rowid, embedding, doc_id) VALUES (?, ?, ?)",
+                (pid, sqlite_vec.serialize_float32(vec), doc_id),
+            )
+
+
+def delete_passages(passage_ids: list[int]) -> None:
+    if not passage_ids:
+        return
+    engine = _engine()
+    table = _ensure_doc_vec(engine, get_embedder().dim)
+    with engine.begin() as conn:
+        for pid in passage_ids:
+            conn.exec_driver_sql("DELETE FROM doc_fts WHERE rowid = ?", (pid,))
+            conn.exec_driver_sql(f"DELETE FROM {table} WHERE rowid = ?", (pid,))
+
+
+def search_passages(doc_id: str, query: str, *, k: int) -> list[int]:
+    """Passage ids of `doc_id` best matching `query` (keyword + vector, rank-fused)."""
+    engine = _engine()
+    pool = k * 4
+    scores: dict[int, float] = {}
+
+    def add(ids) -> None:
+        for rank, pid in enumerate(ids):
+            scores[pid] = scores.get(pid, 0.0) + 1.0 / (_RRF_K + rank + 1)
+
+    with engine.begin() as conn:
+        if q := fts_query(query):
+            add(
+                pid
+                for (pid,) in conn.exec_driver_sql(
+                    "SELECT rowid FROM doc_fts WHERE doc_fts MATCH ? AND doc_id = ? "
+                    "ORDER BY bm25(doc_fts) LIMIT ?",
+                    (q, doc_id, pool),
+                ).all()
+            )
+        embedder = get_embedder()
+        table = _ensure_doc_vec(engine, embedder.dim)
+        [vec] = embedder.embed([query[:_EMBED_CHARS]])
+        add(
+            pid
+            for (pid,) in conn.exec_driver_sql(
+                f"SELECT rowid FROM {table} WHERE embedding MATCH ? AND k = ? AND doc_id = ? "
+                "ORDER BY distance",
+                (sqlite_vec.serialize_float32(vec), pool, doc_id),
+            ).all()
+        )
+    return sorted(scores, key=lambda pid: -scores[pid])[:k]

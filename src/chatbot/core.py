@@ -20,6 +20,7 @@ from pydantic_ai.models import ModelRequestParameters
 from chatbot import prompts
 from chatbot.agent.agent import ChatDeps, get_agent, reply_text
 from chatbot.agent.budget import BudgetExceededError, call_context, estimate_tokens
+from chatbot.capabilities import docs as doc_tools
 from chatbot.config import get_settings
 from chatbot.memory import facts, retrieve, search, summarize
 from chatbot.memory import messages as store
@@ -162,7 +163,13 @@ def _assemble(user_id: str, thread_id: str, text: str, scale: float = 1.0):
         step()
         window = window_for(ctx.history_budget)
 
-    deps = ChatDeps(user_id, thread_id, preferences=ctx.preferences, summaries=ctx.summaries)
+    deps = ChatDeps(
+        user_id,
+        thread_id,
+        preferences=ctx.preferences,
+        summaries=ctx.summaries,
+        docs=doc_tools.refs_block(thread_id),
+    )
     return _render_prompt(text, ctx), window, deps
 
 

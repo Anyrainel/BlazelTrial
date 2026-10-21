@@ -9,6 +9,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 
 from chatbot import prompts
 from chatbot.agent.models import build_model
+from chatbot.capabilities import docs as doc_tools
 from chatbot.config import get_settings
 from chatbot.memory import retrieve
 
@@ -19,6 +20,7 @@ class ChatDeps:
     thread_id: str
     preferences: str = ""  # standing instructions (stable, cacheable)
     summaries: str = ""  # summary block of turns before the replayed window
+    docs: str = ""  # documents opened in this thread
 
 
 @cache
@@ -47,6 +49,12 @@ def get_agent() -> Agent[ChatDeps, str]:
     @agent.instructions
     def summaries(ctx: RunContext[ChatDeps]) -> str:
         return ctx.deps.summaries
+
+    @agent.instructions
+    def docs(ctx: RunContext[ChatDeps]) -> str:
+        return ctx.deps.docs
+
+    doc_tools.register(agent)
 
     @agent.tool
     def search_history(ctx: RunContext[ChatDeps], query: str) -> str:

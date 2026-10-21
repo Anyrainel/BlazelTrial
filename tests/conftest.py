@@ -3,10 +3,11 @@ from pydantic_ai import models
 
 from chatbot.agent.agent import get_agent
 from chatbot.config import Settings, get_settings
+from chatbot.docs_reader.reader import get_mapper, get_reducer
 from chatbot.memory.db import get_engine
 from chatbot.memory.embeddings import get_embedder
 from chatbot.memory.extract import get_extractor
-from chatbot.memory.search import _ensure_vec
+from chatbot.memory.search import _ensure_doc_vec, _ensure_vec
 from chatbot.memory.summarize import get_summarizer
 
 # Unit tests must never reach a real provider.
@@ -36,6 +37,9 @@ def _clear_caches() -> None:
         get_embedder,
         get_summarizer,
         _ensure_vec,
+        _ensure_doc_vec,
+        get_mapper,
+        get_reducer,
     ):
         fn.cache_clear()
 
@@ -56,6 +60,8 @@ def _fake_models(_isolated_env):
     with (
         get_agent().override(model=chat),
         get_summarizer().override(model=summary),
+        get_mapper().override(model=summary),
+        get_reducer().override(model=summary),
         extractor_returning([]),
     ):
         yield
