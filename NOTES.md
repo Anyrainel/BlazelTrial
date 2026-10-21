@@ -50,6 +50,10 @@ sentence with a placeholder; spelling is correct either way.
   message and index writes commit separately; async requests are not serialized across the
   memory pipeline. Fact sources need exact message IDs (potentially multiple), and index
   updates need atomicity or a durable repair path. Forget orchestration is not implemented.
+- R12 progress (2026-10-21): the new memory store (records.py) has exact source refs,
+  serialized + idempotent writes and transactional record indexing; messages get a startup
+  reindex repair. Legacy extraction still attributes a batch to its last turn until it is
+  replaced (PLAN sequence 3).
 - R13. Current fit_history drops only older replayed turns; it cannot bound the current run
   once accumulated tool exchanges alone fill context. Core retries restart the run and can
   repeat completed tool work. Add checkpoints/result references and mutation idempotency.
@@ -136,6 +140,10 @@ sentence with a placeholder; spelling is correct either way.
 - W16. Claude Code proposed "on-demand capability instructions" for M6, against the user's
   recorded D24 (load upfront, measure first). Caught by reading the repo before starting;
   confirmed with the user and built upfront loading with a cost report.
+- W17. While mutation-testing the new version checks, Claude Code used `git checkout` to
+  restore a file that was not committed yet; the restore failed silently and the suite ran
+  against the mutated file (2 failures). Caught from the test output; restored from the
+  /tmp backup. Lesson: commit (or copy) before mutating.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -152,3 +160,4 @@ sentence with a placeholder; spelling is correct either way.
 | 2026-10-20 | | R7: cache breakpoints, instruction-count fix, stable window; cache reads verified live |
 | 2026-10-21 | | M5: docs generator, passage search, map-reduce notes, doc tools; scenario 3 passes live |
 | 2026-10-21 | | M6: capability registry, send_message, LinkedIn writer + validator; scenario 7 passes live |
+| 2026-10-21 | | Memory refactor step 1: contracts doc + storage layer (records, sources, versions, ownership, repair, migration) |

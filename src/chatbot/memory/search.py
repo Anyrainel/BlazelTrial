@@ -4,6 +4,7 @@ reciprocal rank. The only module with raw SQL (virtual tables SQLModel can't exp
 import re
 from dataclasses import dataclass
 from functools import cache
+from types import SimpleNamespace
 
 import sqlite_vec
 from sqlalchemy import Engine
@@ -38,6 +39,11 @@ def create_fts(engine: Engine) -> None:
         conn.exec_driver_sql(
             "CREATE VIRTUAL TABLE IF NOT EXISTS doc_fts USING fts5("
             "text, doc_id UNINDEXED, tokenize='porter unicode61')"
+        )
+        conn.exec_driver_sql(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS record_fts USING fts5("
+            "key, text, user_id UNINDEXED, store UNINDEXED, session_id UNINDEXED, "
+            "tokenize='porter unicode61')"
         )
 
 
@@ -229,3 +235,106 @@ def search_passages(doc_id: str, query: str, *, k: int) -> list[int]:
             ).all()
         )
     return sorted(scores, key=lambda pid: -scores[pid])[:k]
+
+
+# --- memory records (docs/MEMORY_CONTRACTS.md) ---------------------------------------------
+
+
+def index_record(conn, record) -> None:
+    """Index a memory record on `conn` — the caller's open transaction, so the record and its
+    index row commit or roll back together."""
+    conn.exec_driver_sql(
+        "INSERT INTO record_fts(rowid, key, text, user_id, store, session_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            record.id,
+            record.key.replace("_", " "),
+            record.text,
+            record.user_id,
+            # enum value or the enum *name* SQLModel stores ("LONG_TERM") -> "long_term"
+            str(getattr(record.store, "value", record.store)).lower(),
+            record.session_id,
+        ),
+    )
+
+
+def search_records(
+    user_id: str, session_id: str, stores: set[str], query: str, *, k: int
+) -> list[int]:
+    """Record ids matching `query`, best first. Ownership filters run inside the query, before
+    ranking: long_term = this user's; session = this user's records of this session."""
+    q = fts_query(query)
+    if not q or not stores:
+        return []
+    clauses, params = [], [q, user_id]
+    if "long_term" in stores:
+        clauses.append("store = 'long_term'")
+    if "session" in stores:
+        clauses.append("(store = 'session' AND session_id = ?)")
+        params.append(session_id)
+    sql = (
+        "SELECT rowid FROM record_fts WHERE record_fts MATCH ? AND user_id = ? "
+        f"AND ({' OR '.join(clauses)}) ORDER BY bm25(record_fts) LIMIT ?"
+    )
+    with _engine().begin() as conn:
+        return [rid for (rid,) in conn.exec_driver_sql(sql, (*params, k)).all()]
+
+
+def search_session_messages(session_id: str, query: str, *, k: int) -> list[int]:
+    """Message ids of one session matching `query` (BM25), best first."""
+    q = fts_query(query)
+    if not q:
+        return []
+    with _engine().begin() as conn:
+        rows = conn.exec_driver_sql(
+            "SELECT rowid FROM message_fts WHERE message_fts MATCH ? AND thread_id = ? "
+            "ORDER BY bm25(message_fts) LIMIT ?",
+            (q, session_id, k),
+        ).all()
+    return [mid for (mid,) in rows]
+
+
+def reindex_missing() -> dict[str, int]:
+    """Durable repair: index messages and records that are missing from their indexes (e.g.
+    after a crash between a message commit and its indexing). Safe to run any time."""
+    engine = _engine()
+    embedder = get_embedder()
+    vec_table = _ensure_vec(engine, embedder.dim)
+    with engine.begin() as conn:
+        no_fts = conn.exec_driver_sql(
+            "SELECT id, text, thread_id, turn FROM message "
+            "WHERE id NOT IN (SELECT rowid FROM message_fts)"
+        ).all()
+        no_vec = conn.exec_driver_sql(
+            f"SELECT id, text, thread_id, turn FROM message "
+            f"WHERE id NOT IN (SELECT rowid FROM {vec_table})"
+        ).all()
+        no_rec = conn.exec_driver_sql(
+            "SELECT id, key, text, user_id, store, session_id FROM memoryrecord "
+            "WHERE id NOT IN (SELECT rowid FROM record_fts)"
+        ).all()
+        for mid, text, thread_id, turn in no_fts:
+            conn.exec_driver_sql(
+                "INSERT INTO message_fts(rowid, text, thread_id, turn) VALUES (?, ?, ?, ?)",
+                (mid, text, thread_id, turn),
+            )
+        if no_vec:
+            vectors = embedder.embed([text[:_EMBED_CHARS] for _, text, _, _ in no_vec])
+            for (mid, _, thread_id, turn), vec in zip(no_vec, vectors, strict=True):
+                conn.exec_driver_sql(
+                    f"INSERT INTO {vec_table}(rowid, embedding, thread_id, turn) "
+                    "VALUES (?, ?, ?, ?)",
+                    (mid, sqlite_vec.serialize_float32(vec), thread_id, turn),
+                )
+        for rid, key, text, user_id, store, session_id in no_rec:
+            row = SimpleNamespace(
+                id=rid, key=key, text=text, user_id=user_id, store=store, session_id=session_id
+            )
+            index_record(conn, row)
+    return {"message_fts": len(no_fts), "message_vec": len(no_vec), "record_fts": len(no_rec)}
+
+
+@cache
+def repair_once(engine: Engine) -> dict[str, int]:
+    """Run `reindex_missing` once per database per process (startup self-healing)."""
+    return reindex_missing()

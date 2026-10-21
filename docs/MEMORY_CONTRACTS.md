@@ -106,8 +106,10 @@ An explicit, idempotent `migrate-memory` step converts existing `Fact` rows:
 - user-scope facts → long_term records; thread-scope facts → session records;
 - supersede chains are kept;
 - each record is linked to the user message(s) of its source turn.
-It is recorded in a migration table. Old tables remain until the harness injection and
-automatic extraction are removed (PLAN sequence 3).
+Each migrated record keeps `legacy_fact_id` (unique), so reruns are incremental and
+idempotent and link version chains that span runs (CLI: `chatbot migrate-memory`). Facts with
+no surviving source message are migrated without sources and counted, not dropped. Old tables
+remain until the harness injection and automatic extraction are removed (PLAN sequence 3).
 
 ## 9. Open (tunable, measured)
 Note segment size; subagent step budget; vector candidates on/off; long-term lifetime policy.

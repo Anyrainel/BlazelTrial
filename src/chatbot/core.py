@@ -24,6 +24,7 @@ from chatbot.capabilities import docs as doc_tools
 from chatbot.config import get_settings
 from chatbot.memory import facts, retrieve, search, summarize
 from chatbot.memory import messages as store
+from chatbot.memory.db import get_engine
 from chatbot.memory.extract import extract_pending
 from chatbot.memory.models import Source
 
@@ -183,6 +184,7 @@ async def _handle(
     at: datetime | None = None,
 ) -> str | None:
     """One pipeline for live and ingested messages; ingest only skips the model reply."""
+    search.repair_once(get_engine())  # heal index rows lost to a crash after a message commit
     store.ensure_thread(user_id, thread_id)
 
     run_json = None

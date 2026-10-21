@@ -1,0 +1,390 @@
+"""Memory store handlers (docs/MEMORY_CONTRACTS.md): ownership-enforced, bounded, versioned.
+
+Callers are built from trusted run dependencies only; nothing here accepts an owner id from a
+model. Anything the caller may not see is reported exactly like something that doesn't exist.
+Mutations are serialized by one process-wide lock and run in one SQLite transaction together
+with their index rows.
+"""
+
+import re
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from sqlmodel import Session, col, select
+
+from chatbot.memory import refs, search
+from chatbot.memory.db import session
+from chatbot.memory.models import (
+    DocPassage,
+    DocRef,
+    MemoryRecord,
+    Message,
+    RecordKind,
+    RecordSource,
+    Role,
+    Store,
+    utcnow,
+)
+
+MAX_TEXT = 500
+MAX_KEY = 64
+MAX_SOURCES = 10
+MAX_READ_CHARS = 2000
+MAX_EXCERPT = 300
+MAX_K = 10
+MAX_EXPAND = 5
+MAX_VERSIONS = 20
+
+_write_lock = threading.Lock()
+
+
+class MemoryAccessError(ValueError):
+    """A request the model can correct: bad input, unknown/invisible ref, stale version."""
+
+
+@dataclass(frozen=True)
+class MemoryCaller:
+    """Who is asking. Built from trusted run dependencies (ChatDeps), never from tool args."""
+
+    user_id: str
+    session_id: str
+
+
+@dataclass(frozen=True)
+class SourceView:
+    ref: str
+    excerpt: str
+
+
+@dataclass(frozen=True)
+class RecordView:
+    ref: str
+    store: str
+    kind: str
+    key: str
+    text: str
+    created_at: datetime
+    current: bool
+    supersedes: str | None
+    superseded_by: str | None
+    sources: list[SourceView] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MessageView:
+    ref: str
+    role: str
+    turn: int
+    text: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class PassageView:
+    ref: str
+    doc_id: str
+    section: str
+    text: str
+
+
+@dataclass(frozen=True)
+class Hit:
+    ref: str
+    type: str  # "record" | "message"
+    store: str
+    excerpt: str
+    current: bool
+    created_at: datetime
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _not_found(ref: str) -> MemoryAccessError:
+    return MemoryAccessError(f"unknown or not visible: {ref}")
+
+
+# --- visibility -------------------------------------------------------------------------------
+
+
+def _visible_record(s: Session, caller: MemoryCaller, rid: int) -> MemoryRecord | None:
+    r = s.get(MemoryRecord, rid)
+    if r is None or r.user_id != caller.user_id:
+        return None
+    if r.store == Store.SESSION and r.session_id != caller.session_id:
+        return None
+    return r
+
+
+def _visible_message(s: Session, caller: MemoryCaller, mid: int) -> Message | None:
+    m = s.get(Message, mid)
+    if m is None or m.user_id != caller.user_id or m.thread_id != caller.session_id:
+        return None
+    return m
+
+
+def _visible_passage(s: Session, caller: MemoryCaller, pid: int) -> DocPassage | None:
+    p = s.get(DocPassage, pid)
+    if p is None:
+        return None
+    opened = s.exec(
+        select(DocRef.id).where(DocRef.thread_id == caller.session_id, DocRef.doc_id == p.doc_id)
+    ).first()
+    return p if opened else None
+
+
+def _resolve_excerpt(s: Session, caller: MemoryCaller, ref: str) -> str:
+    """Excerpt of a visible source; raises not-found otherwise."""
+    parsed = refs.parse(ref)
+    if parsed is None:
+        raise _not_found(ref)
+    if parsed.type == "msg" and (m := _visible_message(s, caller, parsed.id)):
+        return _clip(m.text, MAX_EXCERPT)
+    if parsed.type == "psg" and (p := _visible_passage(s, caller, parsed.id)):
+        return _clip(p.text, MAX_EXCERPT)
+    if parsed.type == "rec" and (r := _visible_record(s, caller, parsed.id)):
+        return _clip(r.text, MAX_EXCERPT)
+    raise _not_found(ref)  # unknown, invisible, or a type not yet backed (note:, ckpt:)
+
+
+# --- views ------------------------------------------------------------------------------------
+
+
+def _view(s: Session, r: MemoryRecord, *, with_sources: bool = True) -> RecordView:
+    sources = []
+    if with_sources:
+        rows = s.exec(
+            select(RecordSource)
+            .where(RecordSource.record_id == r.id)
+            .order_by(col(RecordSource.id))
+        ).all()
+        sources = [SourceView(row.ref, row.excerpt) for row in rows]
+    return RecordView(
+        ref=refs.rec(r.id),
+        store=str(r.store.value),
+        kind=str(r.kind.value),
+        key=r.key,
+        text=_clip(r.text, MAX_READ_CHARS),
+        created_at=r.created_at,
+        current=r.superseded_at is None,
+        supersedes=refs.rec(r.supersedes_id) if r.supersedes_id else None,
+        superseded_by=refs.rec(r.superseded_by) if r.superseded_by else None,
+        sources=sources,
+    )
+
+
+# --- writes -----------------------------------------------------------------------------------
+
+
+def normalize_key(key: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", key.strip().lower()).strip("_")
+
+
+def write(
+    caller: MemoryCaller,
+    *,
+    store: str,
+    kind: str,
+    key: str,
+    text: str,
+    sources: list[str],
+    supersedes: str | None = None,
+    idempotency_key: str | None = None,
+) -> RecordView:
+    """Store a new record, or a new version of one (`supersedes` = its current version)."""
+    try:
+        store_ = Store(store)
+        kind_ = RecordKind(kind)
+    except ValueError as exc:
+        raise MemoryAccessError(f"invalid store or kind: {exc}") from None
+    key_ = normalize_key(key)
+    text = text.strip()
+    if not key_ or len(key_) > MAX_KEY:
+        raise MemoryAccessError(f"key must be 1-{MAX_KEY} characters of letters/digits")
+    if not text or len(text) > MAX_TEXT:
+        raise MemoryAccessError(f"text must be 1-{MAX_TEXT} characters (got {len(text)})")
+    unique_sources = list(dict.fromkeys(src.strip() for src in sources))
+    if not 1 <= len(unique_sources) <= MAX_SOURCES:
+        raise MemoryAccessError(f"cite 1-{MAX_SOURCES} sources")
+    parsed = [refs.parse(src) for src in unique_sources]
+    if not any(p is not None and p.type in refs.EVIDENCE for p in parsed):
+        raise MemoryAccessError("cite at least one original source (msg: or psg:)")
+
+    with _write_lock, session() as s:
+        if idempotency_key:
+            done = s.exec(
+                select(MemoryRecord).where(MemoryRecord.idempotency_key == idempotency_key)
+            ).first()
+            if done is not None:
+                if _visible_record(s, caller, done.id) is None:
+                    raise MemoryAccessError("idempotency key already used")
+                return _view(s, done)
+
+        excerpts = [_resolve_excerpt(s, caller, src) for src in unique_sources]
+
+        previous = None
+        if supersedes is not None:
+            sp = refs.parse(supersedes)
+            if sp is None or sp.type != "rec":
+                raise _not_found(supersedes)
+            previous = _visible_record(s, caller, sp.id)
+            if previous is None:
+                raise _not_found(supersedes)
+            if previous.superseded_by is not None:
+                raise MemoryAccessError(
+                    f"{supersedes} is not the current version "
+                    f"(current: {refs.rec(_current_id(s, previous))})"
+                )
+            if previous.store != store_ or previous.kind != kind_:
+                raise MemoryAccessError(
+                    f"{supersedes} is a {previous.store.value} {previous.kind.value}; "
+                    "a new version must keep its store and kind"
+                )
+
+        record = MemoryRecord(
+            user_id=caller.user_id,
+            store=store_,
+            session_id=caller.session_id if store_ == Store.SESSION else None,
+            origin_session_id=caller.session_id,
+            kind=kind_,
+            key=key_,
+            text=text,
+            supersedes_id=previous.id if previous else None,
+            idempotency_key=idempotency_key,
+        )
+        s.add(record)
+        s.flush()  # assigns record.id inside the transaction
+        for src, excerpt in zip(unique_sources, excerpts, strict=True):
+            s.add(RecordSource(record_id=record.id, ref=src, excerpt=excerpt))
+        if previous is not None:
+            previous.superseded_at = utcnow()
+            previous.superseded_by = record.id
+            s.add(previous)
+        search.index_record(s.connection(), record)  # same transaction as the record
+        s.commit()
+        return _view(s, record)
+
+
+def _current_id(s: Session, r: MemoryRecord) -> int:
+    seen = 0
+    while r.superseded_by is not None and seen < 1000:
+        r = s.get(MemoryRecord, r.superseded_by)
+        seen += 1
+    return r.id
+
+
+# --- reads ------------------------------------------------------------------------------------
+
+
+def read(caller: MemoryCaller, ref: str) -> RecordView | MessageView | PassageView:
+    parsed = refs.parse(ref)
+    if parsed is None:
+        raise _not_found(ref)
+    with session() as s:
+        if parsed.type == "rec" and (r := _visible_record(s, caller, parsed.id)):
+            return _view(s, r)
+        if parsed.type == "msg" and (m := _visible_message(s, caller, parsed.id)):
+            return MessageView(
+                ref, str(m.role.value), m.turn, _clip(m.text, MAX_READ_CHARS), m.created_at
+            )
+        if parsed.type == "psg" and (p := _visible_passage(s, caller, parsed.id)):
+            return PassageView(ref, p.doc_id, p.section, _clip(p.text, MAX_READ_CHARS))
+    raise _not_found(ref)
+
+
+def expand(caller: MemoryCaller, ref: str, *, before: int = 2, after: int = 2) -> list[MessageView]:
+    """Messages around `ref` in the same session (the message itself included)."""
+    parsed = refs.parse(ref)
+    before, after = max(0, min(before, MAX_EXPAND)), max(0, min(after, MAX_EXPAND))
+    with session() as s:
+        center = _visible_message(s, caller, parsed.id) if parsed and parsed.type == "msg" else None
+        if center is None:
+            raise _not_found(ref)
+        same = Message.thread_id == caller.session_id
+        earlier = s.exec(
+            select(Message)
+            .where(same, col(Message.id) < center.id)
+            .order_by(col(Message.id).desc())
+            .limit(before)
+        ).all()
+        later = s.exec(
+            select(Message)
+            .where(same, col(Message.id) > center.id)
+            .order_by(col(Message.id))
+            .limit(after)
+        ).all()
+        rows = [*reversed(earlier), center, *later]
+        return [
+            MessageView(
+                refs.msg(m.id),
+                str(m.role.value),
+                m.turn,
+                _clip(m.text, MAX_READ_CHARS),
+                m.created_at,
+            )
+            for m in rows
+        ]
+
+
+def versions(caller: MemoryCaller, ref: str) -> list[RecordView]:
+    """The record's version chain, oldest first (at most MAX_VERSIONS, newest kept)."""
+    parsed = refs.parse(ref)
+    with session() as s:
+        r = _visible_record(s, caller, parsed.id) if parsed and parsed.type == "rec" else None
+        if r is None:
+            raise _not_found(ref)
+        chain = [r]
+        while chain[0].supersedes_id and len(chain) < 1000:
+            chain.insert(0, s.get(MemoryRecord, chain[0].supersedes_id))
+        while chain[-1].superseded_by and len(chain) < 1000:
+            chain.append(s.get(MemoryRecord, chain[-1].superseded_by))
+        return [_view(s, x, with_sources=False) for x in chain[-MAX_VERSIONS:]]
+
+
+def search_memory(
+    caller: MemoryCaller, query: str, *, store: str = "both", k: int = 5
+) -> list[Hit]:
+    """BM25 over records and this session's messages, fused by rank; ownership filters are
+    applied in SQL before ranking."""
+    if store not in ("session", "long_term", "both"):
+        raise MemoryAccessError("store must be session, long_term or both")
+    k = max(1, min(k, MAX_K))
+    stores = {"session", "long_term"} if store == "both" else {store}
+    record_ids = search.search_records(caller.user_id, caller.session_id, stores, query, k=k)
+    message_ids = (
+        search.search_session_messages(caller.session_id, query, k=k) if "session" in stores else []
+    )
+    scores: dict[tuple[str, int], float] = {}
+    for kind, ids in (("record", record_ids), ("message", message_ids)):
+        for rank, id_ in enumerate(ids):
+            scores[(kind, id_)] = 1.0 / (60 + rank + 1)
+    hits: list[Hit] = []
+    with session() as s:
+        for kind, id_ in sorted(scores, key=lambda key: -scores[key])[:k]:
+            if kind == "record" and (r := _visible_record(s, caller, id_)):
+                hits.append(
+                    Hit(
+                        refs.rec(r.id),
+                        "record",
+                        str(r.store.value),
+                        _clip(r.text, MAX_EXCERPT),
+                        r.superseded_at is None,
+                        r.created_at,
+                    )
+                )
+            elif kind == "message" and (m := _visible_message(s, caller, id_)):
+                who = "user" if m.role == Role.USER else "assistant"
+                hits.append(
+                    Hit(
+                        refs.msg(m.id),
+                        "message",
+                        "session",
+                        f"{who}: {_clip(m.text, MAX_EXCERPT)}",
+                        True,
+                        m.created_at,
+                    )
+                )
+    return hits

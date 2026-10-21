@@ -76,3 +76,19 @@ def capabilities() -> None:
             f"tools ~{row['schema_tokens']:>4}  total ~{cost:>4}"
         )
     typer.echo(f"{'all':<12} ~{total} tokens per chat request")
+
+
+@app.command("migrate-memory")
+def migrate_memory() -> None:
+    """Copy legacy facts into versioned memory records (idempotent; safe to rerun)."""
+    from chatbot.memory.migrate import migrate_facts
+
+    typer.echo(migrate_facts())
+
+
+@app.command("reindex")
+def reindex() -> None:
+    """Index any messages or memory records missing from the search indexes."""
+    from chatbot.memory.search import reindex_missing
+
+    typer.echo(reindex_missing())

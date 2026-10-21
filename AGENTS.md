@@ -21,7 +21,7 @@ src/chatbot/
   core.py            # send(): the ONLY entry point for every surface
   config.py          # pydantic-settings; all paths/limits from .env
   agent/             # PydanticAI agent, model factory, budget guard + call log, history fit hook
-  memory/            # SQLModel tables, fact extraction, summaries, hybrid search, forget
+  memory/            # tables, records.py (memory store contracts), search, legacy extraction
   capabilities/      # registry.py + one subpackage per capability (docs, messaging, linkedin)
   docs_reader/       # chunked reading of large docs, persisted doc notes
   surfaces/          # cli.py, http.py (FastAPI, serves web/dist), slack_app.py
@@ -41,6 +41,8 @@ uv run chatbot chat --thread s1            # interactive CLI session
 uv run chatbot send USER THREAD "text"     # one-shot call to the core
 uv run chatbot ingest FILE.jsonl           # load {"user","assistant"} lines into slack-dm via core
 uv run chatbot capabilities                # capabilities + their per-request token cost
+uv run chatbot migrate-memory              # copy legacy facts into versioned memory records
+uv run chatbot reindex                     # index messages/records missing from search
 uv run chatbot serve                       # FastAPI: POST /send, web UI at /
 uv run chatbot slack                       # Slack app (Socket Mode)
 uv run python -m scenarios                 # scenario script, prints PASS/FAIL

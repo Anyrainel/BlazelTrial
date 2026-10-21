@@ -127,3 +127,45 @@ class OutboundMessage(SQLModel, table=True):
     recipient: str
     text: str
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class Store(StrEnum):
+    SESSION = "session"
+    LONG_TERM = "long_term"
+
+
+class RecordKind(StrEnum):
+    FACT = "fact"
+    PREFERENCE = "preference"
+    TASK = "task"
+
+
+class MemoryRecord(SQLModel, table=True):
+    """One version of an agent-written memory record (docs/MEMORY_CONTRACTS.md §4).
+
+    Never edited in place except to mark it superseded."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    store: Store = Field(index=True)
+    session_id: str | None = Field(default=None, index=True)  # set for session-store records
+    origin_session_id: str | None = None  # where it was written (provenance only)
+    kind: RecordKind
+    key: str = Field(index=True)
+    text: str
+    created_at: datetime = Field(default_factory=utcnow)
+    supersedes_id: int | None = Field(default=None, index=True)
+    superseded_at: datetime | None = Field(default=None, index=True)
+    superseded_by: int | None = None
+    idempotency_key: str | None = Field(default=None, unique=True)
+    legacy_fact_id: int | None = Field(default=None, unique=True)  # set by Fact migration
+
+
+class RecordSource(SQLModel, table=True):
+    """A source a record cites. `excerpt` is the snapshot long-term readers in other sessions
+    may see (the rest of the source conversation stays invisible to them)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    record_id: int = Field(foreign_key="memoryrecord.id", index=True)
+    ref: str = Field(index=True)
+    excerpt: str
