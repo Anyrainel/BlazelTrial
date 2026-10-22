@@ -1,68 +1,41 @@
-import { useState, type SyntheticEvent } from "react";
 import { AGENT_NAME, Brand } from "./Brand";
 
-const KEY = "hazel.slack_handle";
+const KEY = "hazel.test_user_session";
 
-export const normalizeHandle = (raw: string) => raw.trim().replace(/^@+/, "");
-
-export function loadHandle(): string | null {
+export function loadSession(): boolean {
   try {
-    return localStorage.getItem(KEY);
+    return localStorage.getItem(KEY) === "true";
   } catch {
-    return null;
+    return false;
   }
 }
 
-export function saveHandle(handle: string | null) {
+export function saveSession(loggedIn: boolean) {
   try {
-    if (handle) localStorage.setItem(KEY, handle);
+    if (loggedIn) localStorage.setItem(KEY, "true");
     else localStorage.removeItem(KEY);
   } catch {
     /* storage unavailable: the session just lasts until reload */
   }
 }
 
-/** Demo-only sign-in: no password, the Slack handle is just a display identity. */
-export function Login({ onLogin }: { onLogin: (handle: string) => void }) {
-  const [handle, setHandle] = useState("");
-  const clean = normalizeHandle(handle);
-
-  const submit = (e: SyntheticEvent) => {
-    e.preventDefault();
-    if (clean) onLogin(clean);
-  };
-
+/** Demo-only entry to the configured default user's workspace; no authentication. */
+export function Login({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="login-screen">
       <header className="login-header">
         <Brand />
       </header>
-      <form className="login-card" onSubmit={submit}>
+      <div className="login-card">
         <h1>Meet {AGENT_NAME}</h1>
         <p className="login-sub">
-          Your personal assistant, in the web app and in Slack. This is a demo, so there is no
-          password.
+          Your personal assistant, in the web app and in Slack. This demo uses one shared
+          test user, with no password.
         </p>
-        <label className="login-label" htmlFor="slack-handle">
-          Slack handle
-        </label>
-        <div className="login-field">
-          <span className="login-at">@</span>
-          <input
-            id="slack-handle"
-            value={handle}
-            onChange={(e) => setHandle(e.target.value)}
-            placeholder="your.handle"
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            autoFocus
-          />
-        </div>
-        <button type="submit" className="login-submit" disabled={!clean}>
+        <button type="button" className="login-submit" onClick={onLogin}>
           Log in as test user
         </button>
-      </form>
+      </div>
     </div>
   );
 }

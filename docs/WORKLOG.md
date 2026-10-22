@@ -398,3 +398,12 @@ look up the partner's name before asking; subagent prompt now rewords before not
 | 2026-10-22 | | Prompt fixes (memory before "don't know"), subagent answer-early + last-step guard, retry outputs fix; S1/S4/S6 re-run PASS |
 | 2026-10-22 | | Step 6: full runs - Claude 7/7 twice, Meta 7/7 (log re-scored); subagent caching; step 7: HTTP, Slack (connects), web UI, README, NOTES |
 | 2026-10-22 | | Local Bonsai 2 27B via PrismML llama.cpp fork; autostart from the model factory + `chatbot local-server` (D37) |
+
+## Local test-user entry (2026-10-22 Pacific)
+
+Verified storage records carry user ownership and memory queries filter by user, but the
+web app sends no user ID and uses DEFAULT_USER_ID. Its Slack handle was display-only.
+Replaced the handle form with one test-user login button and a fixed Test user account
+label; browser persistence now stores a demo-session boolean. This remains a single-user
+demo with no authentication; no backend identity or storage semantics changed.
+Validation: frontend TypeScript/production build, 172 offline tests, ruff and diff checks pass. No live LLM scenario run: this change only affects the demo entry screen.

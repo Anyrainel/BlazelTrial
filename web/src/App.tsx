@@ -10,7 +10,7 @@ import {
 } from "@assistant-ui/react";
 import * as api from "./api";
 import { AGENT_NAME, Brand } from "./Brand";
-import { Login, loadHandle, saveHandle } from "./Login";
+import { Login, loadSession, saveSession } from "./Login";
 
 const toThreadMessage = (m: api.Msg, i: number): ThreadMessageLike => ({
   id: `${i}`,
@@ -103,7 +103,7 @@ function Chat({ threadId, onSent }: { threadId: string; onSent: () => void }) {
   );
 }
 
-function Workspace({ handle, onLogout }: { handle: string; onLogout: () => void }) {
+function Workspace({ onLogout }: { onLogout: () => void }) {
   const [threads, setThreads] = useState<api.Thread[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
 
@@ -145,9 +145,7 @@ function Workspace({ handle, onLogout }: { handle: string; onLogout: () => void 
           ))}
         </nav>
         <div className="account">
-          <span className="account-handle" title={`@${handle}`}>
-            @{handle}
-          </span>
+          <span className="account-name">Test user</span>
           <button className="account-logout" onClick={onLogout}>
             Log out
           </button>
@@ -161,16 +159,16 @@ function Workspace({ handle, onLogout }: { handle: string; onLogout: () => void 
 }
 
 export function App() {
-  const [handle, setHandle] = useState<string | null>(loadHandle);
+  const [loggedIn, setLoggedIn] = useState(loadSession);
 
-  const login = (h: string) => {
-    saveHandle(h);
-    setHandle(h);
+  const login = () => {
+    saveSession(true);
+    setLoggedIn(true);
   };
   const logout = () => {
-    saveHandle(null);
-    setHandle(null);
+    saveSession(false);
+    setLoggedIn(false);
   };
 
-  return handle ? <Workspace handle={handle} onLogout={logout} /> : <Login onLogin={login} />;
+  return loggedIn ? <Workspace onLogout={logout} /> : <Login onLogin={login} />;
 }
