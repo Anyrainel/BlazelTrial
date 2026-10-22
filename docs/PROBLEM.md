@@ -18,9 +18,9 @@ documents into a small context window.
 
 ## 2. Surfaces
 
-| | Main chat | Slack DM |
+| | Main chat | Slack DM / channel mentions |
 |---|---|---|
-| **Shape** | Many sessions, used in parallel. Each starts with fresh context. | One never-ending thread (`thread_id = "slack-dm"`), hundreds of messages over months. |
+| **Shape** | Many sessions, used in parallel. Each starts with fresh context. | One endless DM (`slack-dm`) plus one conversation per channel (`slack-<channel ID>`); hundreds of messages over months. |
 | **Interface** | Our choice: CLI, HTTP, or bare web page. No styling. | A real Slack app in a free workspace we control. |
 
 - Single user; no authentication. The main-chat user and the Slack user are the same

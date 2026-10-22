@@ -108,6 +108,8 @@ reads/writes), `within_budget`.
 uv run chatbot slack
 ```
 
+Reference: [Slack app_mention events](https://docs.slack.dev/reference/events/app_mention/).
+
 DM the app: every DM goes to the `slack-dm` thread for the single configured user, so
 shared long-term facts can be recalled from main chat, DMs, and channel conversations.
 Mention `@Hazel` in a channel to chat. Each unique channel has one conversation
@@ -123,7 +125,9 @@ required for mention-only handling. Existing broader subscriptions are harmless:
 the adapter filters them before calling core. Run one Slack worker per state DB.
 Turns are serialized per conversation through reply delivery. Generated replies
 have persistent delivery receipts so a posting retry does not rerun tools. The
-listener retries transient failures three times; exhausted retries are logged.
+listener retries transient failures three times; exhausted retries are logged. There
+is no background outbox drain after exhaustion or restart; replay of the original
+event can retry pending delivery.
 There remains a crash window between core completion and saving its receipt, and
 between Slack accepting a post and confirming it locally; exactly-once delivery
 across those crashes is not guaranteed. Pending replies deleted by forget are

@@ -17,10 +17,10 @@ regression also exposed lazy vector-table creation deadlocking inside forget's
 write transaction on unindexed messages; deletion now visits existing vector
 indexes on the same connection, including historical embedding dimensions.
 
-Implementation in progress: durable reply-reference delivery receipts (no extra
+Implemented durable reply-reference delivery receipts (no extra
 personal text), per-conversation generation/delivery serialization, bounded
 listener retries, explicit event filters and mention normalization, conservative
-Slack mrkdwn rendering. Initial targeted run: 31 tests pass. Test authoring
+Slack mrkdwn rendering. Initial targeted run: 31 tests pass; full implementation run: 140 tests pass. Test authoring
 mistake caught: record APIs return RecordView.ref and reject invisible sources
 with ValueError, rather than returning None; corrected assertions.
 
@@ -28,8 +28,20 @@ Verified current Slack app A0CADLS4P0D via settings UI: Socket Mode enabled,
 bot events app_home_opened, app_mention, message.channels, message.groups,
 message.im. auth.test response confirms granted app_mentions:read, chat:write,
 im:history, im:read among other scopes. No settings changes/reinstall required.
-conversations.info denied missing_scope (channels:read absent); membership will
-be verified through visible Slack UI or history rather than inferred.
+conversations.info denied missing_scope (channels:read absent); membership verified from visible joins and successful live replies in #test and
+#dmagent. Full live evidence and remaining limits: SLACK_EVALUATION.md, channel
+mentions section. Channel -> second channel/DM/main recall, draft isolation,
+thread routing, rapid request ordering, common Slack formatting, cross-surface
+forget and post-forget non-revival PASS. 69 model calls, max input 4,429, no
+violations or refusals. Added retry-backoff ordering regression after inspection
+found the first listener loop released the lock between attempts; retries now
+hold their conversation's place. Synthetic fact deleted through core; no local
+DB/WAL bytes remain; Slack messages retained as evidence.
+
+Concurrent unrelated agent/shrink.py and agent/token_count.py appeared during
+validation. Preserved them. Repository-wide ruff had passed before they appeared;
+a later global run flags long lines in unrelated untracked shrink.py. Checks on
+this feature's changed Python files pass. No unrelated files were staged.
 
 ## Cross-conversation Slack evaluation follow-up (2026-10-21 Pacific)
 

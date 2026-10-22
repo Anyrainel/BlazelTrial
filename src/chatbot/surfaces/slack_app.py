@@ -93,6 +93,7 @@ async def handle_event(
     body: dict,
     bot_user_id: str,
     post: Callable[..., Awaitable],
+    attempts: int = 1,
 ) -> None:
     """Persist generated output before posting; delivery retries reuse it after restarts.
 
@@ -109,43 +110,64 @@ async def handle_event(
     key = ":".join((body.get("team_id", ""), channel, ts))
     locks = _locks.setdefault(asyncio.get_running_loop(), {})
     async with locks.setdefault(tid, asyncio.Lock()):
+        # Hold the conversation's place during retries too: a later event must
+        # not overtake a failed post while its original listener backs off.
+        for attempt in range(attempts):
+            try:
+                await _deliver_event(event, key=key, bot_user_id=bot_user_id, post=post)
+                return
+            except Exception:
+                logger.exception("Slack event failed (attempt %d/%d)", attempt + 1, attempts)
+                if attempt + 1 == attempts:
+                    raise
+                await asyncio.sleep(2**attempt)
+
+
+async def _deliver_event(
+    event: dict,
+    *,
+    key: str,
+    bot_user_id: str,
+    post: Callable[..., Awaitable],
+) -> None:
+    settings = get_settings()
+    tid = conversation_id(event)
+    channel, ts = event["channel"], event["ts"]
+    with session() as s:
+        delivery = s.get(SlackDelivery, key)
+    if delivery is not None and delivery.delivered:
+        return
+    if delivery is None:
+        await send_async(settings.default_user_id, tid, normalize_text(event["text"], bot_user_id))
         with session() as s:
-            delivery = s.get(SlackDelivery, key)
-        if delivery is not None and delivery.delivered:
-            return
-        if delivery is None:
-            await send_async(
-                settings.default_user_id, tid, normalize_text(event["text"], bot_user_id)
-            )
-            with session() as s:
-                reply = s.exec(
-                    select(Message)
-                    .where(
-                        Message.thread_id == tid,
-                        Message.role == Role.ASSISTANT,
-                    )
-                    .order_by(col(Message.id).desc())
-                    .limit(1)
-                ).one()
-                delivery = SlackDelivery(id=key, reply_message_id=reply.id)
-                s.add(delivery)
-                s.commit()
-        with session() as s:
-            reply = s.get(Message, delivery.reply_message_id) if delivery.reply_message_id else None
-        if reply is not None:
-            parent = event.get("thread_ts") or (ts if tid != SLACK_THREAD_ID else None)
-            await post(
-                channel=channel,
-                text=slack_format(reply.text),
-                thread_ts=parent,
-                unfurl_links=False,
-                unfurl_media=False,
-            )
-        # A reply deleted by forget must never be regenerated or delivered.
-        with session() as s:
-            delivery.delivered = True
+            reply = s.exec(
+                select(Message)
+                .where(
+                    Message.thread_id == tid,
+                    Message.role == Role.ASSISTANT,
+                )
+                .order_by(col(Message.id).desc())
+                .limit(1)
+            ).one()
+            delivery = SlackDelivery(id=key, reply_message_id=reply.id)
             s.add(delivery)
             s.commit()
+    with session() as s:
+        reply = s.get(Message, delivery.reply_message_id) if delivery.reply_message_id else None
+    if reply is not None:
+        parent = event.get("thread_ts") or (ts if tid != SLACK_THREAD_ID else None)
+        await post(
+            channel=channel,
+            text=slack_format(reply.text),
+            thread_ts=parent,
+            unfurl_links=False,
+            unfurl_media=False,
+        )
+    # A reply deleted by forget must never be regenerated or delivered.
+    with session() as s:
+        delivery.delivered = True
+        s.add(delivery)
+        s.commit()
 
 
 def run() -> None:
@@ -162,17 +184,16 @@ def run() -> None:
     async def on_message(event, body, client, context):
         # Socket Mode acknowledges before processing. Explicit bounded retries are
         # necessary: Slack will not redeliver an already acknowledged model failure.
-        for attempt in range(3):
-            try:
-                await handle_event(
-                    event, body=body, bot_user_id=context.bot_user_id, post=client.chat_postMessage
-                )
-                return
-            except Exception:
-                logger.exception("Slack event failed (attempt %d/3)", attempt + 1)
-                if attempt < 2:
-                    await asyncio.sleep(2**attempt)
-        logger.error("Slack event exhausted retries; event_id=%s", body.get("event_id"))
+        try:
+            await handle_event(
+                event,
+                body=body,
+                bot_user_id=context.bot_user_id,
+                post=client.chat_postMessage,
+                attempts=3,
+            )
+        except Exception:
+            logger.exception("Slack event exhausted retries; event_id=%s", body.get("event_id"))
 
     @app.event("app_home_opened")
     async def on_home(event):

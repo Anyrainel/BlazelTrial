@@ -177,3 +177,95 @@ the two QA sessions and Slack, max provider input 7,144 tokens, no provider budg
 violations or pre-flight refusals. Screenshot:
 `.state/logs/slack-cross-qa-853.png` (gitignored). Coordinator test facts were
 forgotten through the product; Slack-hosted messages remain as evidence.
+
+
+## Channel mentions extension — 2026-10-22 Pacific
+
+The user explicitly authorized channel mentions beyond the assignment's original
+DM-only scope. This section supersedes the earlier unsupported-channel findings.
+No prior Slack messages were deleted. Synthetic test value was forgotten through
+Hazel; Slack-hosted messages remain as external evidence.
+
+Implementation: human DMs -> `slack-dm`; explicit `app_mention` -> `slack-<channel ID>`.
+Channel replies use `thread_ts` from the incoming event, otherwise its `ts`; DMs
+keep top-level/reply routing. Every channel follow-up needs a mention. General
+channel message events, bot/self messages, hidden messages, edits and file-share
+subtypes are ignored. Only Hazel's mention tokens are stripped. Accepted events
+call the same core as main chat; no surface memory implementation was added.
+
+### Verified app configuration
+
+Inspected Hazel **A0CADLS4P0D**, workspace **T0CA9RH8267**, in the signed-in app
+settings UI and via `auth.test` response headers. Bot **U0CADLU084D**. Socket Mode
+and Events are enabled. Bot subscriptions are `app_home_opened`, `app_mention`,
+`message.channels`, `message.groups`, `message.im`. Granted bot scopes include
+`app_mentions:read`, `chat:write`, `im:history`, `im:read` (also existing broader
+channel-history, user, reaction and assistant permissions).
+
+**No settings update or reinstall is needed for this workspace.** The existing
+`app_mention` subscription and scope were already installed; they were not changed.
+`#test` (**C0CB55JKB7Y**) and `#dmagent` (**C0CAE486WH4**) already have Hazel as a
+member, independently demonstrated by visible join messages and real replies.
+`conversations.info` returned `missing_scope` because `channels:read` is absent;
+that diagnostic permission is not needed by this implementation.
+
+For another installation: enable Socket Mode with an app-level token carrying
+`connections:write`; enable Events and subscribe to bot `message.im` and
+`app_mention`; grant bot `chat:write`, `im:history`, `app_mentions:read` (retain
+existing `im:read` if used). Reinstall after adding OAuth scopes, save changed
+event subscriptions, restart the worker, and `/invite @Hazel` in each intended
+public/private channel. Channel history subscriptions are unnecessary for mention
+handling. Keep App Home Messages enabled for DMs. Current `SLACK_ALLOWED_USER`
+is unset: all accepted authors intentionally map to `me`; set it to the owner's
+Slack user ID if the workspace gains other users. No second-user privacy claim.
+
+### Live results
+
+All these checks used the configured local Bonsai model. The bot was restarted
+with the implementation; prior provider settings and user data were preserved.
+
+| Check | Result / evidence |
+|---|---|
+| #test mention enters core and replies in thread | PASS — [save request](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653007161019), [answer](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653011927709). Core conversation `slack-C0CB55JKB7Y`. |
+| Mention inside existing Slack thread | PASS — [draft request](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653059488699?thread_ts=1792653007.161019), [reply](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653062381429?thread_ts=1792653007.161019) stayed under the original parent. |
+| #test shared fact -> second actual channel | PASS — [#dmagent request](https://blazeltrial.slack.com/archives/C0CAE486WH4/p1792653074923679) correctly recalled the saved synthetic lantern codename and wrote a plain announcement. Distinct core conversation `slack-C0CAE486WH4`. |
+| #test draft-only prefix -> second channel | PASS — accepted #dmagent draft omitted LOCAL-DRAFT-964; it was present in the requested #test draft. This is not an ignored-message isolation test. |
+| Channel fact -> endless DM | PASS — [DM answer](https://blazeltrial.slack.com/archives/D0CACNKNE1Z/p1792653116809159) recalled the codename, omitted draft prefix, stayed top-level. |
+| Channel fact -> main chat; local isolation | PASS — CLI `qa-mentions-main-964` recalled the exact codename and then produced a plain announcement without the draft prefix. Main chat used core, not the web/HTTP UI. |
+| Shared/local storage | PASS — DB inspection found a long-term record originating in #test, no session/global record storing the one-off prefix. Offline regression additionally verifies session-record and raw-source invisibility in accepted channel/DM/main turns. |
+| Rapid channel requests | PASS — [SLOW](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653191535349) and [FAST](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653191804059) arrived 0.269 s apart; answers were 1792653222.047619 then 1792653222.967819, each under its own request. |
+| Common Markdown conversion | PASS — SLOW answer has Slack bold `*...*`, table rows separated by bullets, and a native labelled link. Verified actual posted payload via Slack API. |
+| Main-chat forget -> old draft thread | PASS — [post-forget answer](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653314728789?thread_ts=1792653007.161019) reported the codename unavailable, without reviving LOCAL-DRAFT-964 or writing another announcement. A neutral completion marker replaced the deleted assistant draft locally. |
+| Hard local deletion | PASS — case-insensitive DB/WAL byte search found no full synthetic codename after forgetting. Slack-hosted messages are intentionally retained. |
+| Budget | PASS — 69 sent model calls during 07:10:07–07:15:15 UTC across the four QA conversations, max provider input 4,429, zero violations and zero pre-flight refusals. Logs include chat, memory search and maintenance. |
+
+### Offline guarantees and remaining limits
+
+Regression coverage includes mention normalization, allowlist, bot/subtype filters,
+channel/DM parent routing, persisted deduplication across lock resets, in-flight
+duplicates, retry after generation failure, delivery retry without regenerating,
+cancellation of pending forgotten replies, cross-channel parallelism, serialization,
+and preserving order through delivery retry backoff. Complete turns use a lock per
+conversation. Duplicate keys use workspace + channel + Slack timestamp, so broad
+message subscriptions cannot duplicate app-mention processing. Receipt rows store
+only reply references, and forget clears references before IDs can be reused.
+
+Remaining independent limitations:
+
+- One Slack worker per state DB. Locks order handler arrivals, not timestamps of
+  transport events Slack delivers late. A failed core run can leave an unfinished
+  user row; crash recovery and exactly-once tool execution across the core/receipt
+  boundary remain open. A crash after Slack accepts a post but before its receipt
+  commits can duplicate that delivery.
+- Three listener attempts, with backoff held inside the conversation lock. Exhausted
+  failures are logged; there is no background outbox drain or user-facing failure
+  notification/progress indicator. Pending receipt delivery can be retried by
+  replaying the original event. No real Slack outage was induced.
+- Post-forget recall was correct but took about 55 seconds and repeated memory
+  searches. Model/search latency optimization is separate work.
+- No live private-channel, second-user, file, edit, transport-redelivery or forced
+  process-crash test; those were either outside scope or covered offline where
+  applicable. No claim of multi-user isolation or Slack-hosted deletion.
+
+The prior `app_home_opened` unhandled warning is addressed with a no-op listener.
+The running bot is left connected for continued use.

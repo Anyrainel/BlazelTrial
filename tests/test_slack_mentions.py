@@ -218,3 +218,26 @@ def test_slack_format_preserves_code_and_converts_common_markdown():
     assert "A • B\n1 • 2" in result and "---" not in result
     assert "`**code**`" in result and "```\n**raw**\n```" in result
     assert "&lt;@U2&gt;" in result  # model output cannot trigger unsolicited mentions
+
+
+def test_later_event_cannot_overtake_delivery_retry():
+    posted, attempts = [], 0
+
+    async def post(**kw):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary post failure")
+        posted.append(kw["thread_ts"])
+
+    async def check():
+        await asyncio.gather(
+            slack.handle_event(
+                BASE, body={"team_id": "T1"}, bot_user_id=BOT, post=post, attempts=2
+            ),
+            invoke({**BASE, "ts": "2.001"}, post),
+        )
+
+    asyncio.run(check())
+    assert posted == ["1.001", "2.001"]
+    assert len(messages.thread_messages("slack-CONE")) == 4  # no regenerated turn

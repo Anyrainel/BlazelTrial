@@ -53,7 +53,7 @@ def test_slack_dms_map_to_the_slack_thread_and_the_single_user():
     assert user_msg.user_id == get_settings().default_user_id
 
 
-def test_slack_ignores_bots_edits_other_channels_and_redeliveries(monkeypatch):
+def test_slack_ignores_bots_edits_and_general_channel_messages(monkeypatch):
     base = {"channel_type": "im", "user": "U1", "text": "hi"}
     assert not slack_app.should_handle({**base, "bot_id": "B1"}, None)
     assert not slack_app.should_handle({**base, "subtype": "message_changed"}, None)

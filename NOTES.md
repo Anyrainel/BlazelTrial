@@ -42,7 +42,7 @@ Full working log (assumptions, every AI mistake caught, measurements, time log):
   runner's accounting, not a fresh run. 167 sent calls; max 6,937 input tokens; 0 over; 1
   request refused at pre-flight and retried smaller.
 
-107 offline tests; the key guarantees are mutation-checked.
+140 offline tests; the key guarantees are mutation-checked.
 
 ## What doesn't work / not done
 - A single user message larger than the budget fails after the retries (no chunking of
@@ -50,8 +50,10 @@ Full working log (assumptions, every AI mistake caught, measurements, time log):
 - First `fetch_doc` of a big document takes ~95 s (map-reduce, 15+ calls).
 - The local estimate undercounted Claude by up to ~23% on tool-heavy turns. The guard holds,
   but the estimator isn't tuned.
-- No schema migrations: delete `.state/` after pulling. Slack: one DM thread, no
-  files/threads/edits.
+- No general schema migration framework. This extension adds a table without altering
+  existing data; existing state is preserved. Slack supports DM/thread replies and
+  explicit channel mentions; files and edits remain unsupported. One Slack worker;
+  durable delivery receipts cover retries, with documented crash windows.
 
 Time spent: ~__ hours (fill in).
 
