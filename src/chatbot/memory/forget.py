@@ -1,8 +1,9 @@
 """Forget: remove given values from active memory everywhere for a user.
 
-Soft mode keeps original message text in ForgottenMessage for HTTP display only and replaces
-active messages with neutral completion placeholders. No memory reader accesses that table.
-Hard mode also purges display originals and removes the bytes from disk (contract §7).
+Soft mode keeps the conversation visible: ForgottenMessage holds the message text for HTTP
+display only, with every forgotten value masked ("[forgotten]"), so the value itself is gone
+from storage; active messages become neutral completion placeholders. No memory reader accesses
+that table. Hard mode also deletes the display copies and the messages themselves (contract §7).
 
 Deterministic and user-wide (every session), serialized with all other memory writes:
 - original messages containing a value are deleted (with their index rows); stored runs of the
@@ -99,6 +100,15 @@ def _redact_json(raw: str, pattern: re.Pattern) -> str:
     return json.dumps(walk(json.loads(raw)))
 
 
+DISPLAY_NOTE = "[Forgotten content.]"
+
+
+def _display_copy(text: str, hit: re.Pattern, mentions_value: bool) -> str:
+    """What the chat history still shows for a forgotten message: the text with the forgotten
+    values masked, or a bare note when the message was forgotten as a whole (no value in it)."""
+    return hit.sub(REDACTED, text) if mentions_value else DISPLAY_NOTE
+
+
 def forget_values(
     user_id: str,
     values: list[str],
@@ -123,13 +133,16 @@ def forget_values(
     matches = lambda text: bool(text) and bool(hit.search(text))  # noqa: E731
 
     with _write_lock, session() as s:
-        if mode == "hard":
-            for archived in s.exec(
-                select(ForgottenMessage).where(ForgottenMessage.user_id == user_id)
-            ).all():
+        for archived in s.exec(
+            select(ForgottenMessage).where(ForgottenMessage.user_id == user_id)
+        ).all():
+            if mode == "hard":
                 if matches(archived.text) or archived.message_id in explicit:
                     explicit.add(archived.message_id)
                     s.delete(archived)
+            elif matches(archived.text):  # an earlier display copy mentions this value too
+                archived.text = redact(archived.text, values)
+                s.add(archived)
         # 1. original messages
         msgs = s.exec(select(Message).where(Message.user_id == user_id)).all()
         turns = {(m.thread_id, m.turn) for m in msgs if m.id in explicit}
@@ -172,7 +185,7 @@ def forget_values(
                                 message_id=m.id,
                                 user_id=m.user_id,
                                 thread_id=m.thread_id,
-                                text=m.text,
+                                text=_display_copy(m.text, hit, matches(m.text)),
                             )
                         )
                     m.text = "[Forgotten content. This turn was completed.]"

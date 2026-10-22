@@ -14,6 +14,7 @@ from chatbot.memory.grep import find
 from chatbot.memory.records import MemoryAccessError, MemoryCaller
 from chatbot.surfaces.http import app
 from tests.fakes import scripted, worker_answering
+from tests.test_forget import on_disk
 
 
 def test_soft_forget_preserves_display_but_blocks_all_memory_paths():
@@ -40,8 +41,8 @@ def test_soft_forget_preserves_display_but_blocks_all_memory_paths():
     assert not records.search_memory(caller, "Velvet Otter")
     client = TestClient(app)
     assert [m["text"] for m in client.get("/threads/A/messages").json()] == [
-        secret,
-        f"Noted: {secret}",
+        "[forgotten]",  # the conversation stays visible, the forgotten value does not
+        "Noted: [forgotten]",
     ]
     core.ingest("other", "B", "unrelated", reply="ok")
     assert client.get("/threads/B/messages").status_code == 404
@@ -49,7 +50,7 @@ def test_soft_forget_preserves_display_but_blocks_all_memory_paths():
     assert secret not in client.get("/threads/A/messages").text
 
 
-def test_soft_forget_does_not_redact_current_reply_but_excludes_it_from_replay():
+def test_soft_forget_returns_the_current_reply_as_written_but_keeps_it_only_masked():
     secret = "Velvet Otter access code 873129"
     core.ingest("me", "A", secret, reply="Noted")
     with (
@@ -68,4 +69,38 @@ def test_soft_forget_does_not_redact_current_reply_but_excludes_it_from_replay()
         reply = core.send("me", "A", "Forget my code.")
     assert reply == f"I forgot {secret}."
     assert secret not in str(store.recent_history("A", budget=2500, step=8, chars_per_token=3))
-    assert TestClient(app).get("/threads/A/messages").json()[-1]["text"] == reply
+    shown = TestClient(app).get("/threads/A/messages").json()[-1]["text"]
+    assert shown == "I forgot [forgotten]."  # what stays visible and stored is masked
+    assert not on_disk("873129")
+
+
+def test_soft_forget_keeps_the_conversation_readable_with_the_value_masked_and_off_disk():
+    core.ingest("me", "A", "My address is 27 Larkspur Lane, Apt 4B for the form.", reply="Thanks!")
+    forget.forget_values("me", ["27 Larkspur Lane, Apt 4B"])  # default mode: soft
+    shown = [m["text"] for m in TestClient(app).get("/threads/A/messages").json()]
+    assert shown == ["My address is [forgotten] for the form.", "Thanks!"]
+    assert not on_disk("Larkspur") and not on_disk("Apt 4B")
+    assert "Larkspur" not in str(store.recent_history("A", budget=2500, step=8, chars_per_token=3))
+
+
+def test_a_later_forget_also_masks_values_in_earlier_display_copies():
+    core.ingest("me", "A", "Gym code 111-222 at Cobalt Finch Hall.", reply="ok")
+    forget.forget_values("me", ["111-222"])
+    client = TestClient(app)
+    assert client.get("/threads/A/messages").json()[0]["text"] == (
+        "Gym code [forgotten] at Cobalt Finch Hall."
+    )
+    forget.forget_values("me", ["Cobalt Finch Hall"])  # nothing active mentions it any more
+    assert client.get("/threads/A/messages").json()[0]["text"] == (
+        "Gym code [forgotten] at [forgotten]."
+    )
+    assert not on_disk("Cobalt") and not on_disk("111-222")
+
+
+def test_a_turn_forgotten_as_a_whole_shows_a_bare_note():
+    core.ingest("me", "A", "We are staying at the blue house by the harbour.", reply="Nice view!")
+    target = store.thread_messages("A")[0]
+    forget.forget_values("me", [], message_ids=[target.id])
+    shown = [m["text"] for m in TestClient(app).get("/threads/A/messages").json()]
+    assert shown == [forget.DISPLAY_NOTE, forget.DISPLAY_NOTE]
+    assert not on_disk("harbour")

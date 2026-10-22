@@ -162,23 +162,26 @@ uv run python scripts/eval_retrieval.py
 
 ## How it works (short)
 
-- **Budget guard** (`agent/budget.py`): every model is wrapped; pre-flight token count (provider
-  endpoint, or a conservative estimate) refuses oversized requests before sending, and the
-  reported usage is checked and logged.
+- **Budget guard** (`agent/budget.py`): every model is wrapped. Each request is counted before
+  sending (provider count endpoint; the local llama.cpp server's own tokenizer; else a
+  conservative estimate). One that is not below `MAX_INPUT_TOKENS` is shrunk (`agent/shrink.py`)
+  and re-counted instead of failing; the reported usage is logged, and a low count raises the
+  safety scale.
 - **Context**: static instructions (system prompt + capability instructions) and a bounded
   recent-turn window, nothing else. A history hook re-fits every request of a turn. Long tool
   loops move older tool results behind `out:` refs and write a checkpoint.
 - **Memory is tool-driven** (`capabilities/memory`):
-  - `ask_memory(question)` runs a bounded, read-only subagent over BM25 indexes of memory
-    records, raw messages, episode notes and opened document passages. It returns a status,
-    an answer and its sources.
-  - `remember` / `update_memory` write versioned, source-linked records (session or
-    long-term).
+  - One bounded memory worker, three modes. `ask_memory(question)` searches BM25 indexes of
+    memory records, raw messages, episode notes and opened document passages (plus an exact
+    `grep`) and returns a status, an answer and its sources.
+  - `update_memory(change, scope)` lets the worker find the records a statement replaces and
+    write a new version (the old one stays as history), or save a new record.
   - `forget(what)` lets the worker find every wording, then remove it from active memory.
-    Soft mode (default) keeps original chat text visible in a display-only archive, excluded
-    from agent reads, searches, replay and note maintenance. The current reply is preserved.
-    `MEMORY_FORGET_MODE=hard` also purges matching archived text from disk. Use hard mode for
-    the original assignment's scenario 6 disk-deletion acceptance check.
+    Soft mode (default) keeps the conversation visible: the chat history shows each forgotten
+    message with the forgotten value masked as `[forgotten]` (a message forgotten as a whole
+    shows a bare note). The value is gone from the database files, and the display copy is
+    excluded from agent reads, searches, replay and note maintenance.
+    `MEMORY_FORGET_MODE=hard` also deletes the messages and display copies outright.
 - **Big documents** (`fetch_doc`, `search_doc`) are never inlined. They are read once by
   map-reduce into a cached note, with passages searchable.
 

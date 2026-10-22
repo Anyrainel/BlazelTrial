@@ -133,10 +133,12 @@ User revision (2026-10-22): `MEMORY_FORGET_MODE=soft` is now the default. Matchi
 message text is copied transactionally to `ForgottenMessage`, a display-only table with no
 agent reader or search index. Active message rows become neutral completed-turn placeholders
 with no serialized run. Derived memory is invalidated as below. HTTP history restores the
-original text only for the owning user; the current reply is not redacted. This archive is
-not an undo mechanism. Reindexing and note rebuilding only see active placeholders.
+display copy only for the owning user, **with every forgotten value masked** (`[forgotten]`; a
+turn forgotten as a whole shows a bare note), so the value is not stored anywhere and the archive
+is not an undo mechanism. Later forgets mask earlier display copies too. The reply returned in
+the turn that forgets is not redacted, but its stored copy is. Reindexing and note rebuilding only see active placeholders.
 `MEMORY_FORGET_MODE=hard` retains the original disk-purge contract below, including purging
-matching previously archived messages. Original assignment scenario 6 requires hard mode.
+matching previously archived messages. Scenario 6 passes in both modes (live, soft).
 
 `forget(what)` tool → forget-mode worker → `erase(values, messages)` →
 `memory/forget.py:forget_values(user_id, values, message_ids)`: values ≥ 5 chars, matched case-

@@ -32,6 +32,17 @@ an earlier run that was spending time generating long Bonsai episode notes. Note
 is covered by the offline hard-delete regressions. Feature commit: 8bf827c; earlier user edits
 to frontend, system prompt and unrelated README sections were preserved and left unstaged.
 
+## Soft forgetting fixed (2026-10-22)
+
+User: keep soft forgetting (past conversation should not be removed) and make it work. The
+archive stored full originals, so the address stayed on disk and scenario 6 failed in the
+default mode. Now the display copy masks every forgotten value (`[forgotten]`); the conversation
+stays readable, the value is gone from the database files. Tests: masked display, off-disk,
+later forgets mask earlier copies, whole-turn note. Live Bonsai S6 in soft mode: PASS,
+`on_disk=[]`, 34 calls, max input 4,985. Trade-off: the exact original wording of a forgotten
+message can no longer be shown. Scenario 4 transcript:
+`scratchpad/scenario4_bonsai_transcript.txt` (Bonsai asked for details instead of drafting).
+
 ## Bonsai 2 27B full scenario run (2026-10-22)
 
 First run (500 turns, `local:bonsai-2-27b`): S1, S2 pass; S3 crashed ("token limit exceeded

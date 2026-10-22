@@ -81,8 +81,10 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
 6. **Supersede, don't overwrite.** Changed preferences get a new version; the old one is marked
    superseded with a timestamp, so "what did I say before?" is answerable.
 7. **Forget excludes content from all agent memory paths.** `MEMORY_FORGET_MODE=soft`
-   (default, user direction 2026-10-22) preserves display-only chat originals, never indexed or
-   read by agents. `hard` also purges original text from disk; disk-grep acceptance uses hard mode.
+   (default, user direction 2026-10-22) keeps the conversation visible as a display-only copy
+   with the forgotten values masked (`[forgotten]`), so the value is gone from disk and from
+   every agent path; the copy is never indexed or read by agents. `hard` also deletes the
+   messages and display copies.
 8. **Large inputs are never inlined.** Tools return bounded output; docs > budget are read in
    chunks and distilled into a persisted doc note (keep key facts like dates verbatim).
 9. **Capabilities are plugins:** name, one-line description, schema, `instructions.md`, handler.
