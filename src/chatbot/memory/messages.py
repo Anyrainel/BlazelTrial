@@ -118,8 +118,18 @@ def _shrink_tool_returns(messages: list[ModelMessage]) -> list[ModelMessage]:
     return out
 
 
+FORGOTTEN_USER = "[Forgotten content.]"
+FORGOTTEN_REPLY = "[This turn was completed. Its content was forgotten.]"
+
+
 def _turn_messages(rows: list[Message]) -> list[ModelMessage]:
-    """PydanticAI messages for one turn: the stored run if we have it, else plain text."""
+    """PydanticAI messages for one turn: the stored run if we have it, else plain text.
+    A forgotten turn is replayed as a neutral completed pair, never with its content."""
+    if any(r.forgotten for r in rows):
+        return [
+            ModelRequest(parts=[UserPromptPart(content=FORGOTTEN_USER)]),
+            ModelResponse(parts=[TextPart(content=FORGOTTEN_REPLY)]),
+        ]
     reply = next((r for r in rows if r.role == Role.ASSISTANT), None)
     if reply is not None and reply.run_messages_json:
         return _shrink_tool_returns(ModelMessagesTypeAdapter.validate_json(reply.run_messages_json))

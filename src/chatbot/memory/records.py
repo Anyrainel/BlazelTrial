@@ -150,7 +150,7 @@ def _visible_record(s: Session, caller: MemoryCaller, rid: int) -> MemoryRecord 
 
 def _visible_message(s: Session, caller: MemoryCaller, mid: int) -> Message | None:
     m = s.get(Message, mid)
-    if m is None or m.user_id != caller.user_id or m.thread_id != caller.session_id:
+    if m is None or m.forgotten or m.user_id != caller.user_id or m.thread_id != caller.session_id:
         return None
     return m
 
@@ -371,7 +371,7 @@ def expand(caller: MemoryCaller, ref: str, *, before: int = 2, after: int = 2) -
         center = _visible_message(s, caller, parsed.id) if parsed and parsed.type == "msg" else None
         if center is None:
             raise _not_found(ref)
-        same = Message.thread_id == caller.session_id
+        same = (Message.thread_id == caller.session_id) & (Message.forgotten == False)  # noqa: E712
         earlier = s.exec(
             select(Message)
             .where(same, col(Message.id) < center.id)

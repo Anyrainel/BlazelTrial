@@ -56,17 +56,10 @@ class Message(SQLModel, table=True):
     run_messages_json: str | None = None
     # User rows only: whether fact extraction has processed this message yet.
     extracted: bool = Field(default=False, index=True)
+    # Soft-forgotten: the chat history keeps the message, but memory must never use it (not
+    # indexed, not searchable or readable by agents, not replayed, not summarized).
+    forgotten: bool = Field(default=False, index=True)
     created_at: datetime = Field(default_factory=utcnow, index=True)
-
-
-class ForgottenMessage(SQLModel, table=True):
-    """Display-only originals. Never indexed or exposed to agent memory tools."""
-
-    message_id: int = Field(primary_key=True)
-    user_id: str = Field(index=True)
-    thread_id: str = Field(index=True)
-    text: str
-    forgotten_at: datetime = Field(default_factory=utcnow)
 
 
 class Scope(StrEnum):

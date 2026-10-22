@@ -45,7 +45,9 @@ from chatbot.capabilities.linkedin import validator  # noqa: E402
 from chatbot.capabilities.messaging import sent_messages  # noqa: E402
 from chatbot.config import get_settings  # noqa: E402
 from chatbot.core import SLACK_THREAD_ID, flush, ingest, send  # noqa: E402
-from chatbot.memory.db import get_engine  # noqa: E402
+from chatbot.memory.grep import find  # noqa: E402
+from chatbot.memory.messages import recent_history, thread_messages  # noqa: E402
+from chatbot.memory.records import MemoryCaller, search_memory  # noqa: E402
 from scenarios.fixtures.docs import Q3_LAUNCH_DATE, write_all  # noqa: E402
 from scenarios.fixtures.slack_history import PLANTED, generate  # noqa: E402
 
@@ -170,17 +172,24 @@ def s6() -> None:
     sent = sent_messages()[before:]
     in_text = any(m.lower() in (r1 + r2).lower() for m in marks)
     in_sent = any(m.lower() in s.text.lower() for s in sent for m in marks)
-    get_engine().dispose()
-    path = get_settings().db_path
-    blob = b"".join(
-        p.read_bytes() for p in (path, path.with_name(path.name + "-wal")) if p.exists()
-    ).lower()
-    on_disk = [m for m in marks if m.lower().encode() in blob]
-    ok = not in_text and not in_sent and not on_disk
+    # Memory, not the chat log: the address must be unreachable from every memory path (records,
+    # notes, saved outputs, sent messages, search indexes, replay) while the chat history keeps
+    # the conversation, flagged `forgotten`.
+    reachable = [m for m in marks if find(get_settings().default_user_id, m).total()]
+    indexed = [m for m in marks if search_memory(MemoryCaller("me", DM), m)]
+    replayed = [
+        m
+        for m in marks
+        if m.lower()
+        in str(recent_history(DM, budget=10_000, step=1, chars_per_token=3.0).messages).lower()
+    ]
+    kept = [m for m in thread_messages(DM) if m.forgotten and "Larkspur" in m.text]
+    ok = not in_text and not in_sent and not (reachable or indexed or replayed) and bool(kept)
     record(
         "6 Forget",
         ok,
-        f"reply={in_text} send_message={in_sent} on_disk={on_disk} ({address[:12]}…)",
+        f"reply={in_text} send_message={in_sent} memory={reachable + indexed + replayed} "
+        f"chat_kept_flagged={len(kept)} ({address[:12]}…)",
     )
 
 

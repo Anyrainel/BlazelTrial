@@ -177,11 +177,11 @@ uv run python scripts/eval_retrieval.py
   - `update_memory(change, scope)` lets the worker find the records a statement replaces and
     write a new version (the old one stays as history), or save a new record.
   - `forget(what)` lets the worker find every wording, then remove it from active memory.
-    Soft mode (default) keeps the conversation visible: the chat history shows each forgotten
-    message with the forgotten value masked as `[forgotten]` (a message forgotten as a whole
-    shows a bare note). The value is gone from the database files, and the display copy is
-    excluded from agent reads, searches, replay and note maintenance.
-    `MEMORY_FORGET_MODE=hard` also deletes the messages and display copies outright.
+    Soft mode (default) never removes chat history: a message holding the forgotten value stays
+    in the conversation as written, flagged `forgotten`, and memory never uses it again (not
+    indexed, searched, read, replayed or summarized). Records, notes, saved outputs and sent
+    messages derived from it are deleted for real. `MEMORY_FORGET_MODE=hard` also deletes the
+    messages and purges the bytes.
 - **Big documents** (`fetch_doc`, `search_doc`) are never inlined. They are read once by
   map-reduce into a cached note, with passages searchable.
 

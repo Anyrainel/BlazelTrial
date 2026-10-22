@@ -1,20 +1,21 @@
-"""Forget: remove given values from active memory everywhere for a user.
+"""Forget: take given values out of memory everywhere for a user.
 
-Soft mode keeps the conversation visible: ForgottenMessage holds the message text for HTTP
-display only, with every forgotten value masked ("[forgotten]"), so the value itself is gone
-from storage; active messages become neutral completion placeholders. No memory reader accesses
-that table. Hard mode also deletes the display copies and the messages themselves (contract §7).
+The chat history is not memory and is kept. In soft mode (default) a message that contains a
+value is only flagged `forgotten`: it stays in the conversation as written, but no memory path
+may use it (not indexed, searched, read, replayed or summarized). Everything *derived* from it is
+truly deleted. Hard mode (opt-in) also deletes the messages and purges the bytes.
 
 Deterministic and user-wide (every session), serialized with all other memory writes:
-- original messages containing a value are deleted (with their index rows); stored runs of the
-  remaining messages have the value redacted (tool args, tool results, replies);
-- memory records containing a value, or whose original evidence was all deleted, are deleted;
+- messages containing a value are flagged (soft) or deleted (hard), with their index rows and
+  stored runs; stored runs of the remaining messages have the value redacted (tool args, tool
+  results, replies);
+- memory records containing a value, or whose original evidence was all forgotten, are deleted;
   other cited excerpts containing it are dropped; version links skip deleted versions;
-- episode notes containing a value or covering a deleted message are deleted;
+- episode notes containing a value or covering a forgotten message are deleted;
 - saved tool outputs, checkpoints, outbound messages and legacy fact/summary rows containing a
   value are deleted;
-- FTS indexes are optimized, the WAL is truncated and the database is VACUUMed, so the bytes
-  are gone from disk too.
+- FTS indexes are optimized, the WAL is truncated and the database is VACUUMed, so the deleted
+  bytes are gone from disk too.
 No separate list of forgotten values is persisted.
 """
 
@@ -32,7 +33,6 @@ from chatbot.memory.models import (
     Checkpoint,
     EpisodeNote,
     Fact,
-    ForgottenMessage,
     MemoryRecord,
     Message,
     NoteSource,
@@ -100,15 +100,6 @@ def _redact_json(raw: str, pattern: re.Pattern) -> str:
     return json.dumps(walk(json.loads(raw)))
 
 
-DISPLAY_NOTE = "[Forgotten content.]"
-
-
-def _display_copy(text: str, hit: re.Pattern, mentions_value: bool) -> str:
-    """What the chat history still shows for a forgotten message: the text with the forgotten
-    values masked, or a bare note when the message was forgotten as a whole (no value in it)."""
-    return hit.sub(REDACTED, text) if mentions_value else DISPLAY_NOTE
-
-
 def forget_values(
     user_id: str,
     values: list[str],
@@ -117,10 +108,7 @@ def forget_values(
     compact: bool = True,
     mode: str | None = None,
 ) -> ForgetReport:
-    """Forget `values` and whole turns of `message_ids` using the configured mode.
-
-    Explicit mode="hard" also purges matching previously archived display originals.
-    """
+    """Forget `values` and whole turns of `message_ids` using the configured mode."""
     mode = mode or get_settings().memory_forget_mode
     if mode not in {"soft", "hard"}:
         raise ValueError("forget mode must be soft or hard")
@@ -133,20 +121,15 @@ def forget_values(
     matches = lambda text: bool(text) and bool(hit.search(text))  # noqa: E731
 
     with _write_lock, session() as s:
-        for archived in s.exec(
-            select(ForgottenMessage).where(ForgottenMessage.user_id == user_id)
-        ).all():
-            if mode == "hard":
-                if matches(archived.text) or archived.message_id in explicit:
-                    explicit.add(archived.message_id)
-                    s.delete(archived)
-            elif matches(archived.text):  # an earlier display copy mentions this value too
-                archived.text = redact(archived.text, values)
-                s.add(archived)
-        # 1. original messages
+        # 1. messages: flagged in soft mode (the chat keeps them), deleted in hard mode
         msgs = s.exec(select(Message).where(Message.user_id == user_id)).all()
         turns = {(m.thread_id, m.turn) for m in msgs if m.id in explicit}
-        gone_msgs = [m for m in msgs if matches(m.text) or (m.thread_id, m.turn) in turns]
+        gone_msgs = [
+            m
+            for m in msgs
+            if (matches(m.text) or (m.thread_id, m.turn) in turns)
+            and (mode == "hard" or not m.forgotten)
+        ]
         gone_ids = {m.id for m in gone_msgs}
         for delivery in s.exec(
             select(SlackDelivery).where(col(SlackDelivery.reply_message_id).in_(gone_ids))
@@ -179,17 +162,8 @@ def forget_values(
         for m in msgs:
             if m.id in gone_ids:
                 if mode == "soft":
-                    if s.get(ForgottenMessage, m.id) is None:
-                        s.add(
-                            ForgottenMessage(
-                                message_id=m.id,
-                                user_id=m.user_id,
-                                thread_id=m.thread_id,
-                                text=_display_copy(m.text, hit, matches(m.text)),
-                            )
-                        )
-                    m.text = "[Forgotten content. This turn was completed.]"
-                    m.run_messages_json = None
+                    m.forgotten = True
+                    m.run_messages_json = None  # the run echoes tool results and memory answers
                     s.add(m)
                 else:
                     s.delete(m)
@@ -198,7 +172,7 @@ def forget_values(
                 s.add(m)
                 report.runs_redacted += 1
         report.messages = len(gone_ids)
-        gone_refs = {refs.msg(i) for i in gone_ids}
+        gone_refs = {refs.msg(i) for i in gone_ids | {m.id for m in msgs if m.forgotten}}
 
         # 2. memory records and their sources
         recs = s.exec(select(MemoryRecord).where(MemoryRecord.user_id == user_id)).all()

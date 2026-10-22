@@ -32,7 +32,22 @@ an earlier run that was spending time generating long Bonsai episode notes. Note
 is covered by the offline hard-delete regressions. Feature commit: 8bf827c; earlier user edits
 to frontend, system prompt and unrelated README sections were preserved and left unstaged.
 
-## Soft forgetting fixed (2026-10-22)
+## Soft forget as a flag (2026-10-22, supersedes the masking below)
+
+User: chat history must stay intact; soft forget = a database flag keeping the message out of
+memory search, with true deletion of the summarized/derived memory (the assignment's separate
+memory store). Implemented `Message.forgotten` and made every path honour it (index, reindex,
+read/expand/grep, replay, note prompts, HTTP flag); removed the ForgottenMessage table and the
+masking. Scenario 6 now checks memory reachability (records, notes, saved outputs, sent
+messages, FTS, replay) and that the chat message survives flagged; the old whole-file byte grep
+cannot apply because the chat log keeps the text. Live Bonsai S6: PASS (30 calls, max input
+4,544). Mutation checks: dropping the flag from the read guard, the replay guard or the index
+guard each fails a test (the index guard is defence in depth behind the read guard).
+Scenario 4 diagnosis: memory was set up correctly (rec:2 British superseded by rec:3 American,
+via update_memory); Bonsai never asked memory for the *writing preference* before drafting, only
+for the draft's own content (colours, move plans) and, finding none, refused to draft.
+
+## Soft forgetting fixed (2026-10-22, replaced by the flag above)
 
 User: keep soft forgetting (past conversation should not be removed) and make it work. The
 archive stored full originals, so the address stayed on disk and scenario 6 failed in the

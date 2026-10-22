@@ -87,7 +87,7 @@ def find(
 
     with session() as s:
         if "session" in stores:
-            query = select(Message).where(Message.user_id == user_id)
+            query = select(Message).where(Message.user_id == user_id, Message.forgotten == False)  # noqa: E712
             if not user_wide:
                 query = query.where(Message.thread_id == session_id)
             add(
@@ -192,5 +192,7 @@ def message_ids(user_id: str, text: str) -> list[int]:
         return []
     pattern = matcher([value])
     with session() as s:
-        rows = s.exec(select(Message).where(Message.user_id == user_id)).all()
+        rows = s.exec(
+            select(Message).where(Message.user_id == user_id, Message.forgotten == False)  # noqa: E712
+        ).all()
     return [m.id for m in rows if pattern.search(m.text)]

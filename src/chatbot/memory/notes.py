@@ -56,7 +56,8 @@ def segment_prompt(
     for turn in sorted(rows_by_turn):
         for r in rows_by_turn[turn]:
             who = "user" if r.role == Role.USER else "assistant"
-            lines.append(f"[{turn}] {who}: {' '.join(r.text.split())[:per_msg]}")
+            text = "[forgotten]" if r.forgotten else " ".join(r.text.split())[:per_msg]
+            lines.append(f"[{turn}] {who}: {text}")
     return "\n".join(lines)
 
 

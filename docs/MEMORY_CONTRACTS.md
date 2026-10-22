@@ -129,16 +129,17 @@ already done.
   before replying. Draft-local instructions are not written to any store.
 
 ## 7. Forget (implemented in PLAN step 5)
-User revision (2026-10-22): `MEMORY_FORGET_MODE=soft` is now the default. Matching original
-message text is copied transactionally to `ForgottenMessage`, a display-only table with no
-agent reader or search index. Active message rows become neutral completed-turn placeholders
-with no serialized run. Derived memory is invalidated as below. HTTP history restores the
-display copy only for the owning user, **with every forgotten value masked** (`[forgotten]`; a
-turn forgotten as a whole shows a bare note), so the value is not stored anywhere and the archive
-is not an undo mechanism. Later forgets mask earlier display copies too. The reply returned in
-the turn that forgets is not redacted, but its stored copy is. Reindexing and note rebuilding only see active placeholders.
+User revision (2026-10-22): `MEMORY_FORGET_MODE=soft` is the default. Chat history is not
+memory and is never removed: a message containing a forgotten value (or forgotten whole by ref,
+with the rest of its turn) gets `Message.forgotten = true`, keeps its text, and is excluded
+from every memory path: index rows deleted and never re-created, `read`/`expand`/`grep`/search
+treat it as not found, replay uses a neutral placeholder pair, note prompts show `[forgotten]`,
+its stored run is cleared. The HTTP history returns it as written with `forgotten: true`.
+Everything derived is truly deleted, as below (records and their excerpts, notes, saved outputs,
+checkpoints, sent messages, legacy rows). Consequently the original bytes still exist in the
+`message` table; scenario 6 checks the memory stores, not the chat log.
 `MEMORY_FORGET_MODE=hard` retains the original disk-purge contract below, including purging
-matching previously archived messages. Scenario 6 passes in both modes (live, soft).
+the messages themselves (including previously flagged ones).
 
 `forget(what)` tool → forget-mode worker → `erase(values, messages)` →
 `memory/forget.py:forget_values(user_id, values, message_ids)`: values ≥ 5 chars, matched case-

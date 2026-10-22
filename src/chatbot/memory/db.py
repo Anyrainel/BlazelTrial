@@ -27,10 +27,24 @@ def get_engine() -> Engine:
         conn.enable_load_extension(False)
 
     SQLModel.metadata.create_all(engine)
+    _add_missing_columns(engine)
     from chatbot.memory import search  # raw-SQL virtual tables live there
 
     search.create_fts(engine)
     return engine
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """Additive schema change for existing databases (no migration framework)."""
+    with engine.begin() as conn:
+        have = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(message)")}
+        if "forgotten" not in have:
+            conn.exec_driver_sql(
+                "ALTER TABLE message ADD COLUMN forgotten BOOLEAN NOT NULL DEFAULT 0"
+            )
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_message_forgotten ON message(forgotten)"
+            )
 
 
 def session() -> Session:

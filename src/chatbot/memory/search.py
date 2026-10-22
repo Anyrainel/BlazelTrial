@@ -85,7 +85,7 @@ def _engine() -> Engine:
 
 def index(messages: list[Message]) -> None:
     """Add messages to both indexes (rowid = message id)."""
-    rows = [m for m in messages if m.id is not None and m.text.strip()]
+    rows = [m for m in messages if m.id is not None and m.text.strip() and not m.forgotten]
     if not rows:
         return
     engine = _engine()
@@ -361,11 +361,11 @@ def reindex_missing() -> dict[str, int]:
     with engine.begin() as conn:
         no_fts = conn.exec_driver_sql(
             "SELECT id, text, thread_id, turn FROM message "
-            "WHERE id NOT IN (SELECT rowid FROM message_fts)"
+            "WHERE forgotten = 0 AND id NOT IN (SELECT rowid FROM message_fts)"
         ).all()
         no_vec = conn.exec_driver_sql(
             f"SELECT id, text, thread_id, turn FROM message "
-            f"WHERE id NOT IN (SELECT rowid FROM {vec_table})"
+            f"WHERE forgotten = 0 AND id NOT IN (SELECT rowid FROM {vec_table})"
         ).all()
         no_note = conn.exec_driver_sql(
             "SELECT id, text, user_id, session_id FROM episodenote "

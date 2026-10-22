@@ -1,106 +1,145 @@
-"""Display-only forgotten messages must never return through model memory paths."""
+"""Soft forget: the chat history stays as written, memory never sees it again."""
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 
 from chatbot import core
 from chatbot.agent.agent import get_agent
 from chatbot.agent.models import build_model
 from chatbot.capabilities.memory.subagent import Mode
 from chatbot.config import get_settings
-from chatbot.memory import forget, records, refs, search
+from chatbot.memory import forget, notes, records, refs, search
 from chatbot.memory import messages as store
+from chatbot.memory.db import _add_missing_columns, session
 from chatbot.memory.grep import find
+from chatbot.memory.models import EpisodeNote, Message
 from chatbot.memory.records import MemoryAccessError, MemoryCaller
 from chatbot.surfaces.http import app
 from tests.fakes import scripted, worker_answering
-from tests.test_forget import on_disk
+
+SECRET = "Velvet Otter access code 873129"
+CALLER = MemoryCaller("me", "A")
 
 
-def test_soft_forget_preserves_display_but_blocks_all_memory_paths():
-    secret = "Velvet Otter access code 873129"
-    core.ingest("me", "A", secret, reply=f"Noted: {secret}")
-    caller = MemoryCaller("me", "A")
+def seed():
+    core.ingest("me", "A", SECRET, reply=f"Noted: {SECRET}")
+    core.ingest("me", "A", "Unrelated: I like tea.", reply="Good choice.")
     original = store.thread_messages("A")[0]
     record = records.write(
-        caller,
+        CALLER,
         store="long_term",
         kind="fact",
         key="code",
-        text=secret,
+        text=SECRET,
         sources=[refs.msg(original.id)],
     )
-    forget.forget_values("me", [secret])
-    assert secret not in str(store.recent_history("A", budget=2500, step=8, chars_per_token=3))
-    assert not find("me", secret).total()
-    assert not records.search_memory(caller, "Velvet Otter")
-    with pytest.raises(MemoryAccessError):
-        records.read(caller, record.ref)
-    assert secret not in str(records.read(caller, refs.msg(original.id)))
-    search.reindex_missing()
-    assert not records.search_memory(caller, "Velvet Otter")
-    client = TestClient(app)
-    assert [m["text"] for m in client.get("/threads/A/messages").json()] == [
-        "[forgotten]",  # the conversation stays visible, the forgotten value does not
-        "Noted: [forgotten]",
+    records.save_tool_output(CALLER, "call-1", "ask_memory", f"answer: {SECRET}")
+    return original, record
+
+
+def test_the_chat_history_stays_intact_and_marks_what_was_forgotten():
+    seed()
+    forget.forget_values("me", [SECRET])
+    shown = TestClient(app).get("/threads/A/messages").json()
+    assert [m["text"] for m in shown] == [
+        SECRET,
+        f"Noted: {SECRET}",
+        "Unrelated: I like tea.",
+        "Good choice.",
     ]
-    core.ingest("other", "B", "unrelated", reply="ok")
-    assert client.get("/threads/B/messages").status_code == 404
-    forget.forget_values("me", [secret], mode="hard")
-    assert secret not in client.get("/threads/A/messages").text
+    assert [m["forgotten"] for m in shown] == [True, True, False, False]
+    assert [m.text for m in store.thread_messages("A")][0] == SECRET  # the stored row, as written
 
 
-def test_soft_forget_returns_the_current_reply_as_written_but_keeps_it_only_masked():
-    secret = "Velvet Otter access code 873129"
-    core.ingest("me", "A", secret, reply="Noted")
-    with (
-        worker_answering(
-            Mode.FORGET,
-            {"status": "erased", "summary": "Forgot the code."},
-            steps=[("erase", {"values": [secret]})],
-        ),
-        get_agent().override(
-            model=build_model(
-                get_settings(),
-                raw=scripted([("forget", {"what": "my code"})], f"I forgot {secret}."),
-            )
-        ),
-    ):
+def test_a_forgotten_message_is_invisible_to_every_memory_path():
+    original, record = seed()
+    forget.forget_values("me", [SECRET])
+    # replay to the model: a neutral placeholder pair, never the content
+    replay = str(store.recent_history("A", budget=2500, step=8, chars_per_token=3))
+    assert "873129" not in replay and store.FORGOTTEN_REPLY in replay
+    assert "tea" in replay  # the rest of the conversation is replayed as usual
+    # exact scan, keyword search (and after a repair pass), direct reads, neighbours
+    assert not find("me", SECRET).total() and not find("me", "873129", session_id="A").total()
+    assert not records.search_memory(CALLER, "Velvet Otter")
+    search.reindex_missing()
+    assert not records.search_memory(CALLER, "Velvet Otter 873129")
+    with session() as s:  # no index row was (re)created for the forgotten message
+        rowids = {r[0] for r in s.connection().exec_driver_sql("SELECT rowid FROM message_fts")}
+    assert original.id not in rowids
+    with pytest.raises(MemoryAccessError):
+        records.read(CALLER, refs.msg(original.id))
+    neighbour = store.thread_messages("A")[2]
+    around = records.expand(CALLER, refs.msg(neighbour.id), before=5, after=5)
+    assert all("873129" not in m.text for m in around)
+
+
+def test_everything_derived_from_a_forgotten_message_is_truly_deleted():
+    original, record = seed()
+    report = forget.forget_values("me", [SECRET])
+    with pytest.raises(MemoryAccessError):
+        records.read(CALLER, record.ref)
+    assert report.records == 1 and report.tool_outputs == 1 and report.messages == 2
+    with session() as s:  # the only stored copy left is the chat message itself
+        assert [m.id for m in s.exec(Message.__table__.select()).all() if SECRET in m.text]
+
+
+def test_notes_are_deleted_and_never_rebuilt_from_forgotten_text():
+    for i in range(60):
+        core.ingest("me", "A", SECRET if i == 3 else f"filler {i}", reply="ok")
+    core.flush("me", "A")
+    with session() as s:
+        assert s.exec(EpisodeNote.__table__.select()).all()
+    forget.forget_values("me", [SECRET])
+    with session() as s:
+        assert not [n for n in s.exec(EpisodeNote.__table__.select()).all() if "873129" in n.text]
+    rows = store.turns("A", [4])
+    assert "873129" not in notes.segment_prompt(4, 4, rows, 2000)
+    assert "[forgotten]" in notes.segment_prompt(4, 4, rows, 2000)
+
+
+def test_the_reply_of_the_forgetting_turn_is_returned_as_written_and_stored_forgotten():
+    core.ingest("me", "A", SECRET, reply="Noted")
+    worker = worker_answering(
+        Mode.FORGET,
+        {"status": "erased", "summary": "Forgot the code."},
+        steps=[("erase", {"values": [SECRET]})],
+    )
+    chat = build_model(
+        get_settings(), raw=scripted([("forget", {"what": "my code"})], f"I forgot {SECRET}.")
+    )
+    with worker, get_agent().override(model=chat):
         reply = core.send("me", "A", "Forget my code.")
-    assert reply == f"I forgot {secret}."
-    assert secret not in str(store.recent_history("A", budget=2500, step=8, chars_per_token=3))
-    shown = TestClient(app).get("/threads/A/messages").json()[-1]["text"]
-    assert shown == "I forgot [forgotten]."  # what stays visible and stored is masked
-    assert not on_disk("873129")
+    assert reply == f"I forgot {SECRET}."
+    last = TestClient(app).get("/threads/A/messages").json()[-1]
+    assert last["text"] == reply and last["forgotten"] is True
+    assert "873129" not in str(store.recent_history("A", budget=2500, step=8, chars_per_token=3))
 
 
-def test_soft_forget_keeps_the_conversation_readable_with_the_value_masked_and_off_disk():
-    core.ingest("me", "A", "My address is 27 Larkspur Lane, Apt 4B for the form.", reply="Thanks!")
-    forget.forget_values("me", ["27 Larkspur Lane, Apt 4B"])  # default mode: soft
-    shown = [m["text"] for m in TestClient(app).get("/threads/A/messages").json()]
-    assert shown == ["My address is [forgotten] for the form.", "Thanks!"]
-    assert not on_disk("Larkspur") and not on_disk("Apt 4B")
-    assert "Larkspur" not in str(store.recent_history("A", budget=2500, step=8, chars_per_token=3))
-
-
-def test_a_later_forget_also_masks_values_in_earlier_display_copies():
-    core.ingest("me", "A", "Gym code 111-222 at Cobalt Finch Hall.", reply="ok")
-    forget.forget_values("me", ["111-222"])
-    client = TestClient(app)
-    assert client.get("/threads/A/messages").json()[0]["text"] == (
-        "Gym code [forgotten] at Cobalt Finch Hall."
-    )
-    forget.forget_values("me", ["Cobalt Finch Hall"])  # nothing active mentions it any more
-    assert client.get("/threads/A/messages").json()[0]["text"] == (
-        "Gym code [forgotten] at [forgotten]."
-    )
-    assert not on_disk("Cobalt") and not on_disk("111-222")
-
-
-def test_a_turn_forgotten_as_a_whole_shows_a_bare_note():
+def test_a_turn_can_be_forgotten_as_a_whole_by_message_ref():
     core.ingest("me", "A", "We are staying at the blue house by the harbour.", reply="Nice view!")
     target = store.thread_messages("A")[0]
     forget.forget_values("me", [], message_ids=[target.id])
-    shown = [m["text"] for m in TestClient(app).get("/threads/A/messages").json()]
-    assert shown == [forget.DISPLAY_NOTE, forget.DISPLAY_NOTE]
-    assert not on_disk("harbour")
+    shown = TestClient(app).get("/threads/A/messages").json()
+    assert [(m["text"], m["forgotten"]) for m in shown] == [
+        ("We are staying at the blue house by the harbour.", True),
+        ("Nice view!", True),
+    ]
+    assert not find("me", "harbour").total()
+
+
+def test_hard_mode_still_deletes_the_messages_themselves():
+    seed()
+    forget.forget_values("me", [SECRET], mode="hard")
+    assert SECRET not in TestClient(app).get("/threads/A/messages").text
+
+
+def test_existing_databases_get_the_flag_column(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE message (id INTEGER PRIMARY KEY, text TEXT)")
+        conn.exec_driver_sql("INSERT INTO message (text) VALUES ('kept')")
+    _add_missing_columns(engine)
+    _add_missing_columns(engine)  # idempotent
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT text, forgotten FROM message").all() == [("kept", 0)]
