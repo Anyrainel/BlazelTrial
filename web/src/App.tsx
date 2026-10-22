@@ -9,6 +9,8 @@ import {
   type ThreadMessageLike,
 } from "@assistant-ui/react";
 import * as api from "./api";
+import { AGENT_NAME, Brand } from "./Brand";
+import { Login, loadHandle, saveHandle } from "./Login";
 
 const toThreadMessage = (m: api.Msg, i: number): ThreadMessageLike => ({
   id: `${i}`,
@@ -79,15 +81,21 @@ function Chat({ threadId, onSent }: { threadId: string; onSent: () => void }) {
         <ThreadPrimitive.Viewport className="viewport">
           <ThreadPrimitive.Empty>
             <div className="empty">
-              <h2>How can I help?</h2>
+              <h2>Hi, I&apos;m {AGENT_NAME}. How can I help?</h2>
               <p>I remember what you tell me, across chats and in Slack.</p>
             </div>
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
-          {error && <div className="error">Couldn&apos;t reach the assistant: {error}</div>}
+          {error && (
+            <div className="error">Couldn&apos;t reach {AGENT_NAME}: {error}</div>
+          )}
         </ThreadPrimitive.Viewport>
         <ComposerPrimitive.Root className="composer">
-          <ComposerPrimitive.Input className="composer-input" placeholder="Message…" autoFocus />
+          <ComposerPrimitive.Input
+            className="composer-input"
+            placeholder={`Message ${AGENT_NAME}…`}
+            autoFocus
+          />
           <ComposerPrimitive.Send className="composer-send">Send</ComposerPrimitive.Send>
         </ComposerPrimitive.Root>
       </ThreadPrimitive.Root>
@@ -95,7 +103,7 @@ function Chat({ threadId, onSent }: { threadId: string; onSent: () => void }) {
   );
 }
 
-export function App() {
+function Workspace({ handle, onLogout }: { handle: string; onLogout: () => void }) {
   const [threads, setThreads] = useState<api.Thread[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
 
@@ -119,6 +127,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="sidebar">
+        <Brand />
         <button className="new-chat" onClick={startNew}>
           + New chat
         </button>
@@ -135,10 +144,33 @@ export function App() {
             </button>
           ))}
         </nav>
+        <div className="account">
+          <span className="account-handle" title={`@${handle}`}>
+            @{handle}
+          </span>
+          <button className="account-logout" onClick={onLogout}>
+            Log out
+          </button>
+        </div>
       </aside>
       <main className="main">
         {current && <Chat key={current} threadId={current} onSent={refresh} />}
       </main>
     </div>
   );
+}
+
+export function App() {
+  const [handle, setHandle] = useState<string | null>(loadHandle);
+
+  const login = (h: string) => {
+    saveHandle(h);
+    setHandle(h);
+  };
+  const logout = () => {
+    saveHandle(null);
+    setHandle(null);
+  };
+
+  return handle ? <Workspace handle={handle} onLogout={logout} /> : <Login onLogin={login} />;
 }
