@@ -93,6 +93,7 @@ async def handle_event(
     body: dict,
     bot_user_id: str,
     post: Callable[..., Awaitable],
+    react: Callable[..., Awaitable] | None = None,
     attempts: int = 1,
 ) -> None:
     """Persist generated output before posting; delivery retries reuse it after restarts.
@@ -106,6 +107,15 @@ async def handle_event(
     channel, ts = event.get("channel"), event.get("ts")
     if not channel or not ts:
         return  # real Slack events always supply these; no unsafe fallback dedup key
+    if react is not None:
+        try:
+            await react(channel=channel, timestamp=ts, name="eyes")
+        except Exception as exc:
+            # Duplicate events may already have our receipt. A cosmetic failure
+            # must never prevent generation or delivery of the actual answer.
+            response = getattr(exc, "response", None)
+            if response is None or response.get("error") != "already_reacted":
+                logger.warning("Slack receipt reaction failed: %s", exc)
     tid = conversation_id(event)
     key = ":".join((body.get("team_id", ""), channel, ts))
     locks = _locks.setdefault(asyncio.get_running_loop(), {})
@@ -190,6 +200,7 @@ def run() -> None:
                 body=body,
                 bot_user_id=context.bot_user_id,
                 post=client.chat_postMessage,
+                react=client.reactions_add,
                 attempts=3,
             )
         except Exception:

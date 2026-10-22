@@ -52,6 +52,37 @@ def test_filters(extra):
     assert not slack.should_handle({**BASE, **extra}, None, BOT)
 
 
+@pytest.mark.parametrize("is_dm", [False, True])
+def test_receipt_precedes_generation(is_dm, monkeypatch):
+    react = AsyncMock()
+    real = slack.send_async
+
+    async def generate(*args):
+        react.assert_awaited_once_with(channel=event["channel"], timestamp=event["ts"], name="eyes")
+        return await real(*args)
+
+    event = dict(BASE)
+    if is_dm:
+        event.update(type="message", channel_type="im", channel="D1")
+    monkeypatch.setattr(slack, "send_async", generate)
+    asyncio.run(slack.handle_event(event, body={}, bot_user_id=BOT, post=AsyncMock(), react=react))
+
+
+def test_receipt_failure_does_not_block_and_ignored_events_do_not_react():
+    async def check():
+        react = AsyncMock(side_effect=RuntimeError("missing_scope"))
+        post = AsyncMock()
+        await slack.handle_event(BASE, body={}, bot_user_id=BOT, post=post, react=react)
+        post.assert_awaited_once()
+        react.reset_mock()
+        await slack.handle_event(
+            {**BASE, "bot_id": "B1"}, body={}, bot_user_id=BOT, post=post, react=react
+        )
+        react.assert_not_awaited()
+
+    asyncio.run(check())
+
+
 def test_normalizes_only_hazel_and_checks_allowed_user():
     assert (
         slack.normalize_text("<@UHAZEL|Hazel> ask <@U2> <https://example.com|site> <@UHAZEL>", BOT)

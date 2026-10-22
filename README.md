@@ -94,7 +94,7 @@ reads/writes), `within_budget`.
 1. Create an app at https://api.slack.com/apps ("From scratch") in a workspace you control.
 2. **Socket Mode**: enable it and create an app-level token with `connections:write`. This is
    `SLACK_APP_TOKEN` (`xapp-…`). No public URL or tunnel is needed.
-3. **OAuth & Permissions** bot scopes: `chat:write`, `im:history`, `im:read`, `app_mentions:read`. Install to the
+3. **OAuth & Permissions** bot scopes: `chat:write`, `im:history`, `im:read`, `app_mentions:read`, `reactions:write`. Install to the
    workspace and copy the bot token into `SLACK_BOT_TOKEN` (`xoxb-…`).
 4. **Event Subscriptions**: enable, and subscribe to bot events `message.im` and `app_mention`.
 5. **App Home**: enable the Messages tab ("Allow users to send messages").
@@ -118,6 +118,11 @@ are threaded under the request or its existing parent, without broadcast. Every
 channel follow-up needs another mention. DM replies keep their incoming routing;
 all DM reply threads still share `slack-dm`. Session records and draft-only rules
 stay local; long-term facts are shared through the core's bounded memory tools.
+
+Accepted DMs and mentions receive an immediate 👀 (`eyes`) reaction, before waiting
+for earlier turns or generating a reply. It means received, not completed, and stays
+on the message. Reaction errors are logged without blocking the answer. Existing
+installations must grant `reactions:write`, reinstall the app, and restart the worker.
 
 The app ignores ordinary channel messages, bot/self messages, edits and file-share
 subtypes. No `message.channels`/`message.groups` subscriptions or history scopes are

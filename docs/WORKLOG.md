@@ -407,3 +407,16 @@ Replaced the handle form with one test-user login button and a fixed Test user a
 label; browser persistence now stores a demo-session boolean. This remains a single-user
 demo with no authentication; no backend identity or storage semantics changed.
 Validation: frontend TypeScript/production build, 172 offline tests, ruff and diff checks pass. No live LLM scenario run: this change only affects the demo entry screen.
+
+## Slack visible receipt (2026-10-22 Pacific)
+
+The adapter previously only acknowledged Socket Mode transport, with no visible
+receipt. Added a best-effort permanent eyes reaction to accepted DMs and mentions
+before the conversation lock, so queued requests are acknowledged too. Assumption:
+eyes means received, not processing/completed. Duplicate reactions are harmless;
+other reaction failures are logged and never prevent the answer. README includes
+reactions:write and reinstall/restart instructions. No core/model changes.
+Validation: offline DM/channel receipt ordering and reaction-failure/filter tests;
+full pytest and ruff results recorded below. Live Slack scope grant/reaction has
+not been verified; no LLM scenario required for this adapter-only change.
+Result: 175 offline tests pass; ruff check and git diff --check pass.
