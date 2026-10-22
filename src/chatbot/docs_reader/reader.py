@@ -18,7 +18,7 @@ from sqlmodel import col, delete, select
 
 from chatbot import prompts
 from chatbot.agent.budget import call_context
-from chatbot.agent.models import build_model
+from chatbot.agent.models import build_model, mechanical_task_settings
 from chatbot.config import get_settings
 from chatbot.memory import search
 from chatbot.memory.db import session
@@ -173,7 +173,7 @@ def get_mapper() -> Agent[None, str]:
     return Agent(
         build_model(get_settings()),
         instructions=prompts.load("doc_map"),
-        model_settings={"anthropic_cache": False},
+        model_settings=mechanical_task_settings(get_settings(), max_tokens=1500),
     )
 
 
@@ -182,7 +182,7 @@ def get_reducer() -> Agent[None, str]:
     return Agent(
         build_model(get_settings()),
         instructions=prompts.load("doc_reduce"),
-        model_settings={"anthropic_cache": False},
+        model_settings=mechanical_task_settings(get_settings(), max_tokens=1800),
     )
 
 

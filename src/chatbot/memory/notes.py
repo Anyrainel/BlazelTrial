@@ -13,7 +13,7 @@ from sqlmodel import func, select
 
 from chatbot import prompts
 from chatbot.agent.budget import call_context
-from chatbot.agent.models import build_model
+from chatbot.agent.models import build_model, mechanical_task_settings
 from chatbot.config import get_settings
 from chatbot.memory import messages as store
 from chatbot.memory import records
@@ -26,7 +26,7 @@ def get_note_writer() -> Agent[None, str]:
     return Agent(
         build_model(get_settings()),
         instructions=prompts.load("summarize"),
-        model_settings={"anthropic_cache": False},  # every prompt is unique
+        model_settings=mechanical_task_settings(get_settings(), max_tokens=1200),
     )
 
 

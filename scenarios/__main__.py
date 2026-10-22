@@ -125,7 +125,8 @@ def s3() -> None:
         ingest("me", DM, row["user"], row["assistant"])
     flush("me", DM)
     r = say(DM, "What was the launch date in that plan?")
-    record("3 Big document (+100 turns)", "September 29" in r and "2026" in r)
+    launch = re.search(r"\bSept(?:ember|\.)?\s+29\b", r, re.I)  # "Sept 29" is the same date
+    record("3 Big document (+100 turns)", bool(launch) and "2026" in r)
 
 
 def s4() -> None:

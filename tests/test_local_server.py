@@ -143,3 +143,13 @@ def test_stop_ignores_stale_pid(tmp_path, monkeypatch):
     monkeypatch.setattr(local_server.os, "kill", lambda *a: pytest.fail("must not signal"))
     assert local_server.stop(settings) is False
     assert not (settings.state_path / "local_server.pid").exists()
+
+
+def test_mechanical_tasks_run_without_thinking_only_on_the_local_model(tmp_path, fresh_verdict):
+    local = _settings(tmp_path, 1)
+    models._local_unavailable[local.local_base_url] = None  # server is up
+    out = models.mechanical_task_settings(local, max_tokens=900)
+    assert out["max_tokens"] == 900
+    assert out["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    claude = local.model_copy(update={"llm_provider": "anthropic"})
+    assert models.mechanical_task_settings(claude, max_tokens=900) == {"anthropic_cache": False}

@@ -32,6 +32,22 @@ an earlier run that was spending time generating long Bonsai episode notes. Note
 is covered by the offline hard-delete regressions. Feature commit: 8bf827c; earlier user edits
 to frontend, system prompt and unrelated README sections were preserved and left unstaged.
 
+## Bonsai 2 27B full scenario run (2026-10-22)
+
+First run (500 turns, `local:bonsai-2-27b`): S1, S2 pass; S3 crashed ("token limit exceeded
+before any response") and the run stalled. Cause (call log by purpose): the note and document
+agents let the reasoning model think up to the 16,384-token output cap on every call (20 notes =
+107k output tokens, 16 doc notes = 204k), starving the single server. Fix: `mechanical_task_settings`
+turns thinking off (`chat_template_kwargs.enable_thinking=false`) and caps output for notes,
+document map/reduce and the LinkedIn writer, on local only. 500-turn load: 805 s -> 42 s.
+Re-run: S1, S2, S5, S7 pass. S3 "failed" only because the check wanted the literal "September 29"
+and Bonsai wrote "Sept 29" (correct date); the check now accepts either, and S3 passes on re-run.
+S6 failed on disk by design: `MEMORY_FORGET_MODE` defaults to `soft` (display text kept in
+`ForgottenMessage`); with `hard` it passes (`on_disk=[]`). S4 fails: after "Switch to American
+spelling" Bonsai twice asked for colours and move details instead of drafting (the prompt says to
+assume), so no American draft exists to check; it did explain the spelling history correctly.
+Budget: no call over the limit, max input 5,457 (7,199 in the S3/S6 rerun), 0 refusals.
+
 ## Budget resilience and the memory worker (2026-10-22)
 
 User direction after the scope review: fail fast / count with provider help; make search,

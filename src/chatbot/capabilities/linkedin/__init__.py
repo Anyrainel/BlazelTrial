@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 
 from chatbot.agent.budget import call_context
-from chatbot.agent.models import build_model
+from chatbot.agent.models import build_model, mechanical_task_settings
 from chatbot.capabilities.linkedin import validator
 from chatbot.capabilities.registry import capability
 from chatbot.config import get_settings
@@ -41,7 +41,7 @@ def get_writer() -> Agent[dict, LinkedInPost]:
         deps_type=dict,
         instructions=instructions.replace("{body_limit}", str(BODY_LIMIT)),
         retries={"output": 2},
-        model_settings={"anthropic_cache": False},
+        model_settings=mechanical_task_settings(get_settings(), max_tokens=1500),
     )
 
     @agent.output_validator
