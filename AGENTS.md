@@ -99,10 +99,11 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
 - Frontend talks only to the HTTP API; no business logic in `web/`.
 
 ## Workflow rules
-- Read `docs/PROBLEM.md`, `docs/DECISIONS.md` and `NOTES.md` before non-trivial work.
+- Read `docs/PROBLEM.md`, `docs/DECISIONS.md` and `docs/WORKLOG.md` before non-trivial work.
 - **Commit early and often**, small focused commits. Never rewrite history.
-- Unclear requirement → reasonable assumption → append to `NOTES.md` → keep going.
+- Unclear requirement → reasonable assumption → append to `docs/WORKLOG.md` → keep going.
 - New/changed stack decision → add a row to `docs/DECISIONS.md`.
-- Log AI mistakes you catch and suggestions you reject in `NOTES.md` (it's a deliverable).
+- Log AI mistakes you catch and suggestions you reject in `docs/WORKLOG.md`; `NOTES.md` is
+  the one-page deliverable summary.
 - Never commit secrets, `.env`, `.state/`, `web/node_modules`, or AI transcripts.
 - Done = `pytest` green + relevant scenario PASS + no budget violation in the call log.

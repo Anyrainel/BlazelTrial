@@ -188,7 +188,7 @@ def s7() -> None:
     write_all(get_settings().docs_path)
     n0 = len(log_rows())
     post = say(DM, "Write a LinkedIn post announcing our Q3 launch, based on doc Q3-plan.")
-    rows = log_rows()[n0:]
+    rows = [r for r in log_rows()[n0:] if r["input_tokens"] is not None]  # calls actually sent
     problems = validator.problems(post)
     within = all(r["within_budget"] for r in rows)
     ok = not problems and within and Q3_LAUNCH_DATE.split(",")[0] in post
@@ -211,7 +211,11 @@ def main() -> int:
             SCENARIOS[key]()
         except Exception as exc:  # a crash is a failure, not the end of the run
             record(f"{key} (crashed)", False, f"{type(exc).__name__}: {exc}")
-    rows = log_rows()
+    all_rows = log_rows()
+    # The budget rule is about calls actually sent (provider-reported usage). Requests the
+    # guard refused at pre-flight were never sent; they are reported separately.
+    refused = [r for r in all_rows if r["error"] == "preflight_over_budget"]
+    rows = [r for r in all_rows if r["input_tokens"] is not None]
     over = [r for r in rows if not r["within_budget"]]
     print("\n=== Summary")
     for name, ok, _detail in results:
@@ -220,10 +224,11 @@ def main() -> int:
         f"\nModel calls: {len(rows)}; max reported input tokens: "
         f"{max((r['input_tokens'] or 0) for r in rows) if rows else 0} "
         f"(limit {get_settings().max_input_tokens}); over budget: {len(over)}; "
+        f"refused before sending (then retried smaller): {len(refused)}; "
         f"elapsed: {(datetime.now(UTC) - started).seconds}s"
     )
     budget_ok = not over
-    print(f"{'PASS' if budget_ok else 'FAIL'}  every call within budget")
+    print(f"{'PASS' if budget_ok else 'FAIL'}  every sent call within budget")
     return 0 if all(ok for _, ok, _ in results) and budget_ok else 1
 
 

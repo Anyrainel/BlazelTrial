@@ -1,195 +1,74 @@
 # NOTES
 
-> Working log now; condensed into the one-page deliverable at the end.
+Full working log (assumptions, every AI mistake caught, measurements, time log):
+[docs/WORKLOG.md](docs/WORKLOG.md). Decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
 
-## Live results (scenarios 1, 4, 5 — 2026-10-20)
-| Model | S1 cross-thread | S4 changed mind | S5 stays local | Calls | Max input | Pre-flight ≥ actual |
-|---|---|---|---|---|---|---|
-| Claude Sonnet 5.5 | PASS | PASS | PASS | 22 | 1,160 | 22/22 (server count) |
-| Muse Spark 1.3 Contributor | PASS | PASS | PASS | 22 | 2,523 | 22/22 (server count) |
+## Design
+- **One core**, `send(user_id, thread_id, text)`, behind CLI, HTTP/web (assistant-ui) and Slack
+  (Socket Mode). Ingested history uses the same pipeline; only the model reply is skipped.
+- **Budget guard on every model**: pre-flight count (provider endpoint, or estimate ×1.5)
+  refuses oversized requests; provider-reported input (incl. cache) is logged per call and
+  must be ≤ `MAX_INPUT_TOKENS`.
+- **Context = static instructions + a bounded recent-turn window.** Nothing about the user is
+  injected. A history hook re-fits every request of a turn: it drops old turns first, then
+  moves the current run's completed tool results behind `out:` refs with a checkpoint.
+- **Tool-first memory** in SQLite:
+  - `ask_memory` runs a bounded read-only subagent. It searches BM25 indexes of versioned
+    memory records, raw messages, source-linked episode notes and opened-document passages,
+    and returns status + answer + sources.
+  - `remember` / `update_memory` write explicit, source-cited, versioned records: session- or
+    long-term-scoped, idempotent per turn.
+  - `forget` deterministically deletes a value everywhere, then VACUUMs.
+- **Big docs** are never inlined: a map-reduce note is cached per content hash, and passages
+  are searchable.
+- **LinkedIn rules** are enforced in code: a validator plus repair, and the post is returned
+  verbatim.
 
-Scenario 2 (Claude, 500 ingested turns, 2026-10-20): PASS. "Which caterer ... deposit?" →
-"Saffron Table ... $340, due by Thursday" (turn 20); partner "Sam" (turn 60). Ingest took
-175 s and 72 calls (53 extract, 19 summarize); 75 calls total, all within budget, max chat
-input 5,227 tokens.
+## Trade-offs
+- Tool-first recall costs calls: about 4 subagent requests per chat request. Prompt caching
+  cuts subagent input by 80% in reads, but latency is higher than injection would be.
+- Lexical BM25 by default: notes and vectors added no recall on a 14-question paraphrase eval
+  (12/14 each). Paraphrase gaps rely on the subagent rewording queries.
+- Forget matches literal values the agent supplies (after an `ask_memory` lookup).
+  Deterministic and verifiable, but paraphrased mentions ("the Larkspur place") can survive.
+- Ingest runs no agent, so ingested facts are recalled from raw messages and notes, not from
+  records.
 
-Scenario 3 (Claude, 2026-10-20): PASS. Q3-plan is 35,370 tokens (Claude count). "Summarize doc
-Q3-plan." took 95 s (36 map/reduce calls, note cached); after 100 ingested turns, "What was the
-launch date in that plan?" → "Tuesday, September 29, 2026" plus the other milestones. 55 calls,
-all within budget, max chat input 6,968.
+## Results
+`python -m scenarios` (500-turn Slack history, real models):
+- **Claude Sonnet 5.5: 7/7, twice.** 314 calls; max 7,440 input tokens; 0 over.
+- **Muse Spark 1.3 Contributor: 7/7.** Scored from the run's call log after fixing the
+  runner's accounting, not a fresh run. 167 sent calls; max 6,937 input tokens; 0 over; 1
+  request refused at pre-flight and retried smaller.
 
-Scenario 7 (Claude, on scenario 2's 500-turn history, 2026-10-21): PASS. Post: 906 chars,
-3 hashtags on the last line, no links, facts from Q3-plan (launch September 29, 2026; beta
-August 18). 44 calls (36 for the first Q3-plan note), all within budget; max 7,855 input tokens
-(see R14). Live `send_message`: "Message my partner..." → recorded to Sam.
+107 offline tests; the key guarantees are mutation-checked.
 
-Meta needed fixes before passing (W5–W7). Muse answers "write one sentence about our favourite
-organisation's logo" by saying it doesn't know the organisation, where Claude writes the
-sentence with a placeholder; spelling is correct either way.
+## What doesn't work / not done
+- A single user message larger than the budget fails after the retries (no chunking of
+  pasted text).
+- First `fetch_doc` of a big document takes ~95 s (map-reduce, 15+ calls).
+- The bot sometimes doesn't look memory up before saying it lacks something (e.g. the
+  partner's name after a forget).
+- The local estimate undercounted Claude by up to ~23% on tool-heavy turns. The guard holds,
+  but the estimator isn't tuned.
+- No schema migrations: delete `.state/` after pulling. Slack: one DM thread, no
+  files/threads/edits.
 
-Tool-first memory (PLAN step 3, Claude, 2026-10-21): scenarios 1, 4, 5 PASS with no injected
-memory. The agent saved facts/preferences itself, superseded British -> American via
-`update_memory`, and explained the change from the version chain. 179 calls (32 chat, 147
-memory_search), all within budget, max 6,426 input tokens. Historical passes above describe the
-old injection design.
+Time spent: ~__ hours (fill in).
 
-Forget (PLAN step 5, Claude, 500-turn history, 2026-10-21): scenario 6 PASS. Address (turn 100)
-absent from replies, from send_message (none sent; the bot asked for the address instead) and
-from the database files on disk. 54 calls, all within budget, max 6,352 input tokens. Recall gaps
-seen: "Where do I live?" missed the "New address is..." message (vocabulary gap) and the bot didn't
-look up the partner's name before asking; subagent prompt now rewords before not_found.
+## Where the AI was wrong (and how it was caught)
+1. **Token estimate counted every replayed turn's stored instructions.** Providers only
+   receive the latest ones. Each live turn looked ~1.2k tokens bigger, the history window
+   shrank to 2 turns and slid every turn, and the prompt cache never hit. Caught by checking
+   cache reads in the live call log after adding a cache breakpoint showed no effect.
+2. **Doc map-reduce never converged.** Reduce outputs were too big to pair, so the note count
+   stopped shrinking: 149 calls and 892 s for one summary. Caught in the live scenario 3 call
+   log. Groups now always take two or more clipped notes.
 
-## Assumptions
-- A5. 2026-10-21 memory plan: persisted source evidence + source-linked summary notes, searched
-  together through BM25 behind a bounded read-only memory subagent. Evaluate existing vectors
-  rather than mandate or remove them. Session persistence does not grant cross-session access.
-  Initial note grouping uses bounded non-overlapping segments; exact size and detailed lifetime
-  policy remain tunable. Full design/implementation sequence: PLAN.md; decisions D29-D30.
-  This is accepted design, not implemented runtime behaviour or a new scenario PASS.
-- A1. Single user, hard-coded `user_id` mapping between main chat and Slack.
-- A2. Runtime state, including the generated document corpus, lives in gitignored `.state/`
-  inside the repo dir (satisfies "SQLite or files inside the repo directory"; keeps user data out
-  of git). `fetch_doc` reads `.state/docs/`; graders generate it with `scripts/gen_docs.py`.
-- A3. "Styled" web UI is allowed even though the brief says no styling is needed.
-- A5b. Ingested history goes through the same pipeline (storage, indexing, note maintenance)
-  but runs no agent, so it produces no tool-written records; ingested facts are recalled from
-  raw messages and notes via ask_memory.
-- A4. Budget number = provider-reported input tokens including cache reads/writes
-  (PydanticAI's normalized `RequestUsage.input_tokens`).
-
-## To revisit
-- R11. 2026-10-20 design review: user chose tool-driven session/long-term memory and deferred
-  detailed scope policy. Existing harness injection/extraction is not this architecture yet.
-  Context shrinking takes priority over estimator tuning; current tools may load upfront.
-- R12. Implementation inspection: extractor assigns all facts in a batch to its last turn;
-  message and index writes commit separately; async requests are not serialized across the
-  memory pipeline. Fact sources need exact message IDs (potentially multiple), and index
-  updates need atomicity or a durable repair path. Forget orchestration is not implemented.
-- R12 progress (2026-10-21): the new memory store (records.py) has exact source refs,
-  serialized + idempotent writes and transactional record indexing; messages get a startup
-  reindex repair. Legacy extraction still attributes a batch to its last turn until it is
-  replaced (PLAN sequence 3).
-- R13 (addressed in step 4: in-run compaction + content idempotency). Current fit_history drops only older replayed turns; it cannot bound the current run
-  once accumulated tool exchanges alone fill context. Core retries restart the run and can
-  repeat completed tool work. Add checkpoints/result references and mutation idempotency.
-- R1. Hybrid retrieval (FTS5 + local embeddings): measure after prototype whether embeddings
-  are needed or FTS5 + query rewriting is enough.
-- R2. ~~Python 3.13 wheels~~ — fastembed 0.9 and sqlite-vec 0.1.9 work on 3.13 / Windows.
-- R3. Meta model id `muse-spark-1.3-contributor` is built into PydanticAI's `MetaProvider`
-  (`https://api.meta.ai/v1`). Still to confirm with a key: usage fields and whether the
-  token-count endpoint works. Local Bonsai 2: confirm server and model name.
-- R4. Local estimate (chars/3 + 8 per part) undercounted Meta by up to 31% (structured-output
-  framing is hidden from us). Now: server count for Claude and Meta (Meta's overcounts ~2x, safe),
-  estimate x1.5 only for local servers. Re-measure on Bonsai 2.
-- R5. Extraction adds one model call per live message (~1.0-1.2k input tokens). Options:
-  skip obviously fact-free messages with a cheap heuristic, or run extraction in the background.
-- R6. ~~Profile lists every fact~~ — done in M4: preferences in instructions, facts ranked by
-  relevance within FACTS_TOKEN_BUDGET. The extractor still keeps some chatter ("X had coffee
-  and might join project Y"); tighten further if it hurts ranking.
-- R7. ~~Chat prompt caching misses~~ — fixed: explicit breakpoints after instructions and before
-  the current message (`CachePoint`). Live, 5 consecutive Slack turns read 2,068 → 3,229 cached
-  tokens per call (~60-75% of input); before, 0. The window had also been sliding every turn
-  (see W10).
-- R8. A single user message larger than the budget still fails after the retries; treat it
-  like a big document (chunk + summarize) or reject it with a friendly reply.
-- R10. First fetch of a big doc takes ~95 s (15 map calls). Could precompute notes when docs
-  are generated/changed, or stream a quick partial answer.
-- R14. Estimate vs real: the history hook kept a LinkedIn turn's third request under the
-  6,400-token estimate target, yet Claude counted 7,855 (~23% more: tool exchanges, thinking
-  blocks, template text). The guard still holds; tighten via estimation work or by asking the
-  provider count inside the hook (deferred per PLAN: estimation precision is a follow-up).
-- R15. Replies sometimes cite internal turn numbers ("my earlier answer in turn 506") because
-  snippets are labelled by turn; label by date instead.
-- R16. Measured (scripts/eval_retrieval.py): 12/14 recall@5 for every configuration; notes and
-  vectors added nothing on this set. Misses are paraphrases ("midday"->lunch, "morning
-  sync"->standup). Default stays BM25; vectors optional (D36).
-- R17. ask_memory is used on most turns (policy: check preferences before drafting, recall
-  before personal answers): ~4.6 subagent requests per chat request live. Measure and tune in
-  PLAN step 6 (fewer steps per question, skip preference checks for non-drafting turns, cache
-  answers within a turn).
-- R9. Schema changes are not migrated: delete `.state/state.db` after pulling (pre-release).
-
-## Where the AI was wrong
-- W1. Claude Code claimed PydanticAI would "work against" a per-call token budget. The user
-  pushed back; checking current docs showed `per_request_input_tokens_limit` +
-  `count_tokens_before_request` and `ProcessHistory` hooks cover it. Switched to PydanticAI.
-
-- W2. Claude Code's first token estimator measured the JSON of stored PydanticAI messages
-  (timestamps, ids, metadata), inflating sizes several-fold, so a long thread replayed only 1
-  turn. Caught by the history-window unit test; switched to counting only the content sent.
-- W3. Claude Code's first live check for scenario 4 looked for "colour" vs "color", but the
-  model wrote "favourite organisation" then "favorite organization" (correct behaviour). The
-  check was wrong, not the bot; caught by reading the transcript. Scenario checks must test
-  several spelling pairs.
-- W4. A test fixture installed the fake chat model before another fixture cleared the agent
-  cache, so tests silently hit the (blocked) real model. Caught by the failing tests; fixed by
-  making the dependency explicit.
-- W5. Claude Code's system prompt called memory "authoritative, prefer it on conflict". Claude
-  coped, but Muse refused "Switch to American spelling" because memory still said British (it
-  updates after the reply). Caught in the Meta live run; the newest message now always wins.
-- W6. Claude Code's sync `send()` used `asyncio.run()` per call. Cached provider clients keep
-  connections bound to the first (closed) loop, so the 2nd Meta call crashed with "Event loop is
-  closed". Fixed with one shared `asyncio.Runner`; the first fix then broke 10 tests because
-  the Runner reused the context vars captured on its first call (overrides invisible) — fixed by
-  passing `context=copy_context()` per call.
-- W7. Muse emitted a progress preamble (phase="commentary") that PydanticAI includes in
-  `result.output`, and invented a user name ("Hi Maya"). Reply now skips commentary parts;
-  prompt forbids invented personal details.
-- W8. Claude Code's first M4 design dumped all facts into the instructions. The 500-turn live
-  run produced 70 facts (~5.8k tokens) and pre-flight refused the chat call at 11.9k. Caught by
-  the budget guard on the live run; facts are now relevance-ranked within a budget.
-- W9. Retrieval first injected 6 snippets into every message (even "latest") because vector
-  nearest neighbours always exist. Caught by a unit test; vector hits now need distance <= 0.35.
-- W10. Claude Code's token estimate counted every replayed request's stored `instructions`
-  (~1.2k tokens each), though providers only get the latest. Live turns looked ~1.3k tokens, the
-  history window shrank to 2 turns and its start moved every turn, defeating the cache. Caught by
-  checking cache reads live (R7). Now only the latest instructions count, stored runs drop
-  instructions, and replayed tool output is cut to a fixed stub.
-- W11. The history generator used one random number for both dates and hours ("dentist at
-  26:30"). Caught when the bot asked for a real time in the live run.
-- W12. Claude Code's first doc reducer grouped notes by size only; reduce outputs (~3.8k chars)
-  often didn't pair under the 7.5k group limit, so the note count stopped shrinking: 149 calls,
-  892 s for one summary. Caught in the live scenario 3 log. Groups now take >= 2 clipped notes.
-- W13. Context assembly sized only the first request of a turn; fetch_doc + search_doc results
-  pushed the next request to 8,506 tokens (refused by pre-flight, then retried). Caught in the
-  same log; a ProcessHistory hook now re-fits every request in the tool loop.
-- W14. A Claude Code test captured the message list PydanticAI mutates in place, so both
-  "requests" looked identical; and a later version was sized so nothing needed trimming (a
-  vacuous pass). Caught by debugging the processor directly.
-- W15. Claude Code's first LinkedIn fallback, after the writer exhausted its retries, assembled
-  the post from the *brief* instead of the writer's last draft. Caught by a unit test; the
-  fallback now trims the last draft deterministically.
-- W16. Claude Code proposed "on-demand capability instructions" for M6, against the user's
-  recorded D24 (load upfront, measure first). Caught by reading the repo before starting;
-  confirmed with the user and built upfront loading with a cost report.
-- W17. While mutation-testing the new version checks, Claude Code used `git checkout` to
-  restore a file that was not committed yet; the restore failed silently and the suite ran
-  against the mutated file (2 failures). Caught from the test output; restored from the
-  /tmp backup. Lesson: commit (or copy) before mutating.
-- W18. First live run of the tool-first memory: the subagent tried to open the source
-  message of a long-term record from another session (correctly invisible) and reported its
-  absence as a caveat; the main agent also showed internal refs ("rec:2") and said lookups
-  "failed" when the subagent hit its step limit on empty searches. Caught by reading the live
-  transcript; prompt fixes (cited excerpts are the evidence, not_found after 2-3 empty
-  searches, never show refs).
-
-## Rejected AI suggestions
-- (none yet)
-
-## Time log
-| Date | Hours | What |
-|---|---|---|
-| 2026-10-19 | | Spec, AGENTS.md, stack decisions |
-| 2026-10-19 | | M1: uv project, config, model factory, budget guard + call log, CLI |
-| 2026-10-19 | | M2: SQLModel tables, turn persistence, history window, ingest path |
-| 2026-10-20 | | M3: scoped/versioned facts, extractor, profile; scenarios 1, 4, 5 pass live |
-| 2026-10-20 | | Meta live check: loop fix, token-count fix, prompt + commentary fixes |
-| 2026-10-20 | | M4: hybrid search, retrieval, summaries, bounded context; scenario 2 passes live |
-| 2026-10-20 | | R7: cache breakpoints, instruction-count fix, stable window; cache reads verified live |
-| 2026-10-21 | | M5: docs generator, passage search, map-reduce notes, doc tools; scenario 3 passes live |
-| 2026-10-21 | | M6: capability registry, send_message, LinkedIn writer + validator; scenario 7 passes live |
-| 2026-10-21 | | Memory refactor step 1: contracts doc + storage layer (records, sources, versions, ownership, repair, migration) |
-| 2026-10-21 | | Memory refactor step 2: episode notes, fused source+note search, deterministic retrieval tests |
-| 2026-10-21 | | Memory refactor step 3: ask_memory subagent, write tools, injection/extraction removed; S1/S4/S5 live |
-| 2026-10-21 | | Memory refactor step 4: doc passages in search, in-run compaction + checkpoints, mutation keys, recovery tests |
-| 2026-10-21 | | Step 5: forget sweep + tool + disk purge (S6 live PASS); step 6 started: scenario runner, retrieval eval |
+## AI suggestion rejected
+Claude Code's first memory design injected all remembered facts, preferences, summaries and
+search hits into every prompt, filled by automatic extraction. I rejected it in favour of
+agent-called memory tools: with hundreds of facts the injected block blew the 8k budget (11.9k
+pre-flight) and was mostly irrelevant. It also made scope and versioning implicit. The
+tool-first design keeps context small and puts recall behind an inspectable, source-cited
+interface.
