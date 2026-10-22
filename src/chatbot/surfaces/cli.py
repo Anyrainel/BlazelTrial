@@ -117,6 +117,24 @@ def memory_search(
         typer.echo("(no hits)")
 
 
+@app.command("local-server")
+def local_server(action: str = typer.Argument("status", help="start | stop | status")) -> None:
+    """Manage the llama.cpp server behind LLM_PROVIDER=local (also autostarted on first use)."""
+    from chatbot.agent import local_server as server
+
+    settings = get_settings()
+    match action:
+        case "start":
+            started = server.ensure_running(settings)
+            typer.echo(f"{'started' if started else 'already running'}: {settings.local_base_url}")
+        case "stop":
+            typer.echo("stopped" if server.stop(settings) else "no server started by us is running")
+        case "status":
+            typer.echo(server.status(settings))
+        case _:
+            raise typer.BadParameter("expected start, stop or status")
+
+
 @app.command()
 def serve(
     host: str = typer.Option(None, help="Defaults to HTTP_HOST."),

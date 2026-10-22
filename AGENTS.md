@@ -44,6 +44,7 @@ uv run chatbot capabilities                # capabilities + their per-request to
 uv run chatbot migrate-memory              # copy legacy facts into versioned memory records
 uv run chatbot reindex                     # index messages/records/notes missing from search
 uv run chatbot memory-search S "q"         # diagnostics: fused memory search as session S
+uv run chatbot local-server start          # llama.cpp Bonsai server (autostarts when LLM_PROVIDER=local)
 uv run chatbot serve                       # FastAPI: POST /send, web UI at /
 uv run chatbot slack                       # Slack app (Socket Mode)
 uv run python -m scenarios                 # scenario script (real LLM), prints PASS/FAIL

@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     meta_api_key: SecretStr | None = None
     local_base_url: str = "http://localhost:11434/v1"
     local_api_key: SecretStr = SecretStr("local")
+    # llama.cpp server for LLM_PROVIDER=local, started on first use if nothing answers on
+    # LOCAL_BASE_URL (`chatbot local-server` starts/stops it by hand). Bonsai 2 needs
+    # PrismML's llama.cpp fork; LLM_MODEL becomes the served model name.
+    local_autostart: bool = True
+    local_server_bin: Path | None = None
+    local_model_path: Path | None = None
+    local_context: int = 65536  # total KV context, split across the parallel slots
+    local_parallel: int = 2
+    local_reasoning: Literal["on", "off", "auto"] = "auto"
+    local_start_timeout: float = 180.0
 
     # Hard cap on input tokens (incl. cached) for every single model request.
     max_input_tokens: int = 8000

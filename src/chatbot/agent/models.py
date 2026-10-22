@@ -7,6 +7,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.meta import MetaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from chatbot.agent import local_server
 from chatbot.agent.budget import BudgetedModel, CallLog
 from chatbot.config import Settings
 
@@ -30,6 +31,8 @@ def build_raw_model(settings: Settings) -> Model:
             provider = MetaProvider(api_key=_secret(settings.meta_api_key, "META_API_KEY"))
             return OpenAIResponsesModel(settings.llm_model, provider=provider)
         case "local":
+            if settings.local_autostart:
+                local_server.ensure_running(settings)
             provider = OpenAIProvider(
                 base_url=settings.local_base_url, api_key=settings.local_api_key.get_secret_value()
             )
