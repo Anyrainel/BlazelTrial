@@ -2,6 +2,37 @@
 
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
+## Budget resilience and the memory worker (2026-10-22)
+
+User direction after the scope review: fail fast / count with provider help; make search,
+forget and override equally intelligent; resilient rather than failing; Slack bugs fixed if they
+persist.
+- **Slack (P1/P2 of SLACK_EVALUATION)**: already fixed by Codex before this session
+  (`463942d` and follow-ups: failed events are not marked done, per-conversation lock around
+  generation + delivery, receipts, mrkdwn conversion, `app_home_opened` handled). Verified by
+  the offline suite. Added D43: the same one-turn-at-a-time lock in the core for every surface.
+- **Token counting (D41)**: Anthropic and Meta already used the provider count endpoint; there
+  is no server-side "max input" parameter, so the guard has to run before sending. Local
+  Bonsai was sized by chars/3 x 1.5 (about half the real budget unusable); llama.cpp's
+  `/apply-template` + `/tokenize` reproduce `prompt_tokens` exactly (586 = 586 on a probe). The
+  guard now uses it (5% margin). Live: counted 354, reported 337; a 2,921-token request was
+  shrunk to 1,056 counted / 1,033 reported under a 1,200 limit.
+- **Shrink instead of fail (D41)**: oversized requests are trimmed (biggest tool results,
+  oldest turns, older tool results, middle of a pasted message) and re-counted; the old
+  "single message larger than the budget fails" limitation is gone. Reported-over-budget no
+  longer raises by default; a low count raises the method's scale.
+- **Memory worker (D42)**: `ask_memory`, `update_memory(change, scope)`, `forget(what)` run one
+  worker with shared principles and per-mode prompts (`worker*.md`); new tools `grep`,
+  `list_records`, `save`, `revise`, `erase`; erase can also delete whole turns by message ref.
+- Live (Claude Sonnet 5.5, 200-turn history): S1, S4, S5 PASS; S6 first FAILED (reply, sends
+  clean, but the address bytes stayed on disk: the main agent's run no longer carries the value,
+  so the post-turn sweep found nothing and skipped compaction), fixed by compacting in the
+  `forget` tool; re-run PASS. 115 calls, max input 5,268, none over the limit.
+- Mistakes caught: first shrinker loop could spin forever when the omission marker made a
+  result no shorter (test run hung; caught by the 300 s timeout); the scale-learning rule
+  fired on exact counts (live log showed "ran low (3147 vs 3147)"), fixed to fire only when the
+  provider reports more than we judged.
+
 ## Authorized channel mentions implementation (2026-10-22 Pacific)
 
 User explicitly expanded the original DM-only scope: one core conversation per

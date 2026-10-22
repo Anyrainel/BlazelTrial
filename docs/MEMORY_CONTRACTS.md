@@ -8,8 +8,11 @@ rules; the build order is PLAN's implementation sequence. Nothing here is runtim
 | Who | Interface | Role |
 |---|---|---|
 | Main agent | `ask_memory(question, store)` | the recall interface (read-only, bounded subagent) |
-| Main agent | `remember(...)`, `update_memory(...)` | explicit, validated writes (session or long_term) |
-| Memory subagent only | `search`, `read`, `expand`, `versions` | low-level, read-only evidence access |
+| Main agent | `update_memory(change, scope)` | remember or change something; the worker finds what it replaces (session or long_term) |
+| Main agent | `forget(what)` | erase what the user described, found by the worker |
+| Memory worker only | `search`, `grep`, `list_records`, `read`, `expand`, `versions` | low-level, read-only evidence access |
+| Memory worker, write mode | `save`, `revise` | validated record writes (the same handlers as before) |
+| Memory worker, forget mode | `erase` | model-chosen strings/messages handed to the deterministic hard delete |
 | Diagnostics / evals | same low-level handlers, callable directly | offline recall comparisons |
 
 No memory contents, title catalogs or search hits are injected into prompts by the harness.
@@ -99,9 +102,21 @@ is still over target, its completed tool results (all but the latest) are saved 
 and completed calls go to a `ckpt:` checkpoint. Call/return pairs stay intact. The main agent
 reads any of these back with `read_memory(ref)` (bounded; session-private).
 
-## 6. Write path: `remember` / `update_memory`
-- **Arguments**: `store`, `kind`, `key`, `text`, `sources`, plus `supersedes` for updates.
-  Handlers validate ownership, size, source visibility and the version relation.
+## 5b. One worker, three modes (D42)
+`ask_memory`, `update_memory` and `forget` each run the same bounded worker (fresh per task, no
+recursion, trusted caller, shared budget guard; `purpose=memory_search|memory_write|memory_forget`)
+with `worker.md` (shared principles) plus one prompt per mode. Tools by mode: read =
+`search grep list_records read expand versions`; write = read + `save revise`; forget = read +
+`erase`. `grep` is an exact case/whitespace-insensitive scan (numbers, codes, names that BM25
+ranks badly); scoped to the caller's visibility, except in forget mode where it covers every
+conversation, saved outputs and sent messages. A step limit returns `incomplete` with what was
+already done.
+
+## 6. Write path: `update_memory` (worker `save` / `revise`)
+- **Arguments** (worker tools): `save(store, kind, key, text, sources)` and
+  `revise(record, text, sources)`; the user's current message is always cited. Handlers validate
+  ownership, size, source visibility and the version relation; `save` refuses to duplicate a
+  current record under the same key (it names the record to revise instead).
 - **Serialized**: one process-wide lock around every mutation, plus a SQLite transaction.
 - **Idempotent**: the key is the turn (current message) + tool + arguments, so a repeated or
   retried write in the same turn (even from a restarted run with new tool-call ids) returns the
@@ -114,10 +129,14 @@ reads any of these back with `read_memory(ref)` (bounded; session-private).
   before replying. Draft-local instructions are not written to any store.
 
 ## 7. Forget (implemented in PLAN step 5)
-`forget(values)` tool → `memory/forget.py:forget_values(user_id, values)`: values ≥ 5 chars,
-matched case- and whitespace-insensitively, user-wide, under the write lock, one transaction.
-The agent first locates how the information was written (`ask_memory`) and passes each
-distinctive variant. After the turn is stored, the core sweeps again (the turn's own run holds
+`forget(what)` tool → forget-mode worker → `erase(values, messages)` →
+`memory/forget.py:forget_values(user_id, values, message_ids)`: values ≥ 5 chars, matched case-
+and whitespace-insensitively, user-wide, under the write lock, one transaction. The worker finds
+how the information was written (`search` for meaning, `grep` for strings, `read` for exact
+wording), erases each distinctive string, erases messages that discuss it without a distinctive
+string by ref (the whole turn goes), then searches again with other words. `erase` refuses a
+string matching more than `MEMORY_ERASE_MAX_MESSAGES` messages unless the worker confirms the
+user meant everything, and reports any string still found afterwards. After the turn is stored, the core sweeps again (the turn's own run holds
 the values in tool args and memory answers), redacts the reply, then optimizes FTS, truncates
 the WAL and VACUUMs; the scenario check greps the database files on disk.
 

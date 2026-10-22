@@ -1,7 +1,8 @@
-"""Memory capability: `ask_memory` (read-only subagent) and explicit, validated writes.
+"""Memory capability: `ask_memory`, `update_memory` and `forget`, each run by the bounded memory
+worker (subagent.py), plus `read_memory` for saved tool outputs.
 
 The caller (user + session) and the current message come from trusted run dependencies; the
-model only supplies the question or the record content. Writes are idempotent per tool call.
+model only describes what to find, remember or forget. Writes are idempotent per turn.
 """
 
 import hashlib
@@ -12,22 +13,13 @@ from pydantic_ai import RunContext
 
 from chatbot.capabilities.memory import subagent
 from chatbot.capabilities.registry import capability
+from chatbot.memory import forget as forgetting
 from chatbot.memory import records
-from chatbot.memory.forget import forget_values
 from chatbot.memory.records import MemoryAccessError, MemoryCaller
 
 
 def caller_of(ctx: RunContext) -> MemoryCaller:
     return MemoryCaller(ctx.deps.user_id, ctx.deps.thread_id)
-
-
-def _sources(ctx: RunContext, sources: list[str] | None) -> list[str]:
-    """Explicit refs, or the user's current message (the usual evidence for a statement)."""
-    cited = [s for s in (sources or []) if s.strip()]
-    current = getattr(ctx.deps, "current_msg_ref", None)
-    if current and current not in cited:
-        cited.insert(0, current)
-    return cited
 
 
 def mutation_key(ctx: RunContext, tool: str, *parts: object) -> str:
@@ -36,10 +28,6 @@ def mutation_key(ctx: RunContext, tool: str, *parts: object) -> str:
     digest = hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()
     turn = getattr(ctx.deps, "current_msg_ref", None) or ctx.tool_call_id
     return f"{turn}|{tool}|{digest[:24]}"
-
-
-def _shown(view: records.RecordView) -> str:
-    return f"Saved {view.ref} ({view.store} {view.kind} '{view.key}'): {view.text}"
 
 
 async def ask_memory(
@@ -57,84 +45,53 @@ async def ask_memory(
     return subagent.render(answer)
 
 
-def remember(
-    ctx: RunContext,
-    store: Literal["session", "long_term"],
-    kind: Literal["fact", "preference", "task"],
-    key: str,
-    text: str,
-    sources: list[str] | None = None,
+async def update_memory(
+    ctx: RunContext, change: str, scope: Literal["long_term", "session"] = "long_term"
 ) -> str:
-    """Remember something new. Use update_memory instead to change an existing record.
+    """Remember something new, or change something remembered, in one call. Memory finds what
+    the statement replaces and keeps the old version as history.
 
     Args:
-        store: "long_term" for durable facts and standing preferences, "session" for things
-            that only apply to this conversation.
-        kind: "fact", "preference" (how to behave or write) or "task" (work in progress).
-        key: short topic, e.g. "manager" or "spelling".
-        text: one self-contained sentence, names and dates verbatim (max 500 chars).
-        sources: extra refs this rests on; the user's current message is always included.
+        change: what is now true, in one sentence with names, dates and numbers verbatim, e.g.
+            "The user's manager is Priya Raman" or "The user now wants American spelling
+            (was British)".
+        scope: "long_term" for durable facts and standing preferences (every conversation),
+            "session" for what applies only to this conversation.
     """
-    try:
-        view = records.write(
+    key = mutation_key(ctx, "update_memory", scope, change)
+    done = ctx.deps.outputs.setdefault("mutations", {})
+    if key not in done:  # a retried run repeats the call; the first result stands
+        outcome, _ = await subagent.work(
+            subagent.Mode.WRITE,
             caller_of(ctx),
-            store=store,
-            kind=kind,
-            key=key,
-            text=text,
-            sources=_sources(ctx, sources),
-            idempotency_key=mutation_key(ctx, "remember", store, kind, key, text),
+            f"Memory update (store: {scope}): {change}",
+            store=scope,
+            current_msg_ref=getattr(ctx.deps, "current_msg_ref", None),
         )
-    except MemoryAccessError as exc:
-        return f"Not saved: {exc}"
-    return _shown(view)
+        done[key] = subagent.render_work(outcome)
+    return done[key]
 
 
-def update_memory(ctx: RunContext, record: str, text: str, sources: list[str] | None = None) -> str:
-    """Replace a remembered record with a new version; the old one stays as history.
+async def forget(ctx: RunContext, what: str) -> str:
+    """Permanently forget something the user asked to forget, from every conversation: messages,
+    memory, summaries, saved outputs. Memory finds every place and wording; do not search first.
 
     Args:
-        record: ref of the current version (e.g. "rec:12", from ask_memory).
-        text: the new content, one self-contained sentence (max 500 chars).
-        sources: extra refs; the user's current message is always included.
+        what: the thing to forget in the user's words, e.g. "my home address".
     """
-    caller = caller_of(ctx)
-    try:
-        old = records.read(caller, record)
-        if not isinstance(old, records.RecordView):
-            return f"Not saved: {record} is not a memory record."
-        view = records.write(
-            caller,
-            store=old.store,
-            kind=old.kind,
-            key=old.key,
-            text=text,
-            sources=_sources(ctx, sources),
-            supersedes=record,
-            idempotency_key=mutation_key(ctx, "update_memory", record, text),
-        )
-    except MemoryAccessError as exc:
-        return f"Not saved: {exc}"
-    return _shown(view) + f" (replaces {record})"
-
-
-def forget(ctx: RunContext, values: list[str]) -> str:
-    """Permanently delete information the user asked to forget, from every conversation.
-
-    First use ask_memory to find how it was actually written, then pass each distinctive
-    variant (e.g. the full address, the street line, the postcode). Values under 5 characters
-    are refused. Everything containing a value is deleted, plus anything derived from it.
-
-    Args:
-        values: exact strings to erase, e.g. ["27 Larkspur Lane, Apt 4B", "Larkspur Lane"].
-    """
-    report = forget_values(ctx.deps.user_id, values, compact=False)
-    ctx.deps.outputs.setdefault("forget", []).extend(values)  # scrubbed again after the turn
-    note = f" Ignored as too short: {len(report.rejected)}." if report.rejected else ""
-    return (
-        f"Forgotten: removed or redacted {report.total()} stored item(s).{note} "
-        "Do not repeat the forgotten information in your reply or in any message."
+    outcome, deps = await subagent.work(
+        subagent.Mode.FORGET,
+        caller_of(ctx),
+        f"Forget: {what}",
+        current_msg_ref=getattr(ctx.deps, "current_msg_ref", None),
     )
+    ctx.deps.outputs.setdefault("forget", []).extend(deps.erased)  # scrubbed again after the turn
+    if deps.erased or deps.erased_refs:
+        # The run no longer carries the values, so the post-turn sweep may find nothing left to
+        # delete and skip compaction: purge the freed bytes here.
+        forgetting.compact_storage()
+    note = "Do not repeat the forgotten information in your reply or in any message."
+    return f"{subagent.render_work(outcome)}\n{note}"
 
 
 def read_memory(ctx: RunContext, ref: str) -> str:
@@ -155,7 +112,6 @@ CAPABILITY = capability(
     "Recall from and write to the user's memory.",
     __file__,
     ask_memory,
-    remember,
     update_memory,
     read_memory,
     forget,

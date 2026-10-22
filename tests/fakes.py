@@ -6,7 +6,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, Tool
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from chatbot.agent.models import build_model
-from chatbot.capabilities.memory.subagent import get_search_agent
+from chatbot.capabilities.memory.subagent import Mode, get_worker
 from chatbot.config import get_settings
 
 
@@ -35,10 +35,15 @@ def scripted(steps: list, final, seen: list | None = None) -> FunctionModel:
 
 
 @contextmanager
-def search_agent_answering(final: dict, steps: list | None = None, seen: list | None = None):
+def worker_answering(mode: Mode, final: dict, steps: list | None = None, seen: list | None = None):
+    """Script the memory worker of one mode: tool calls in `steps`, then the output `final`."""
     model = build_model(get_settings(), raw=scripted(steps or [], final, seen))
-    with get_search_agent().override(model=model):
+    with get_worker(mode).override(model=model):
         yield
+
+
+def search_agent_answering(final: dict, steps: list | None = None, seen: list | None = None):
+    return worker_answering(Mode.READ, final, steps, seen)
 
 
 def prompt_text(content) -> str:

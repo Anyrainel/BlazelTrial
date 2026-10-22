@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     memory_search_max_requests: int = 6
     memory_search_tool_chars: int = 12000
     memory_answer_chars: int = 1500
+    # Write and forget tasks of the same worker, and the most messages one string may erase
+    # without the worker confirming that the user meant everything.
+    memory_write_max_requests: int = 6
+    memory_forget_max_requests: int = 8
+    memory_erase_max_messages: int = 15
 
     # Episode notes: fixed segments of this many turns, written once they are this far behind
     # the newest turn (searchable via ask_memory, never injected).

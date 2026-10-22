@@ -3,7 +3,7 @@ from pydantic_ai import models
 
 from chatbot.agent.agent import get_agent
 from chatbot.capabilities.linkedin import get_writer
-from chatbot.capabilities.memory.subagent import get_search_agent
+from chatbot.capabilities.memory.subagent import Mode, get_worker
 from chatbot.config import Settings, get_settings
 from chatbot.docs_reader.reader import get_mapper, get_reducer
 from chatbot.memory.db import get_engine
@@ -36,7 +36,7 @@ def _clear_caches() -> None:
         get_engine,
         get_embedder,
         get_note_writer,
-        get_search_agent,
+        get_worker,
         _ensure_vec,
         _ensure_doc_vec,
         get_mapper,
@@ -55,7 +55,7 @@ def _fake_models(_isolated_env):
     from pydantic_ai.models.test import TestModel
 
     from chatbot.agent.models import build_model
-    from tests.fakes import search_agent_answering
+    from tests.fakes import search_agent_answering, worker_answering
 
     settings = get_settings()
     chat = build_model(settings, raw=TestModel(custom_output_text="ok", call_tools=[]))
@@ -66,6 +66,8 @@ def _fake_models(_isolated_env):
         get_mapper().override(model=summary),
         get_reducer().override(model=summary),
         search_agent_answering({"status": "not_found", "answer": "Nothing found."}),
+        worker_answering(Mode.WRITE, {"status": "skipped", "summary": "Nothing stored."}),
+        worker_answering(Mode.FORGET, {"status": "nothing_found", "summary": "Nothing found."}),
     ):
         yield
 

@@ -17,6 +17,7 @@ from chatbot import core
 from chatbot.agent.agent import get_agent
 from chatbot.agent.budget import estimate_tokens
 from chatbot.agent.models import build_model
+from chatbot.capabilities.memory.subagent import Mode
 from chatbot.capabilities.messaging import sent_messages
 from chatbot.config import get_settings
 from chatbot.memory import records
@@ -24,7 +25,7 @@ from chatbot.memory.db import session
 from chatbot.memory.models import EpisodeNote, MemoryRecord
 from chatbot.memory.notes import get_note_writer
 from chatbot.memory.records import MemoryCaller
-from tests.fakes import scripted
+from tests.fakes import scripted, worker_answering
 
 A = MemoryCaller("me", "A")
 
@@ -94,9 +95,21 @@ def test_repeated_writes_and_sends_in_a_turn_happen_once():
         "text": "The user's partner is Sam.",
     }
     msg = {"to": "Sam", "text": "Home late tonight."}
-    steps = [("remember", args), ("remember", args), ("send_message", msg), ("send_message", msg)]
+    change = {"change": "The user's partner is Sam."}
+    steps = [
+        ("update_memory", change),
+        ("update_memory", change),
+        ("send_message", msg),
+        ("send_message", msg),
+    ]
     seen: list[str] = []
-    with get_agent().override(model=build_model(get_settings(), raw=scripted(steps, "ok", seen))):
+    saved = worker_answering(
+        Mode.WRITE, {"status": "saved", "summary": "ok"}, steps=[("save", args)]
+    )
+    with (
+        saved,
+        get_agent().override(model=build_model(get_settings(), raw=scripted(steps, "ok", seen))),
+    ):
         core.send("me", "A", "Remember my partner is Sam and tell him I'm home late.")
     with session() as s:
         assert len(s.exec(MemoryRecord.__table__.select()).all()) == 1
@@ -195,11 +208,19 @@ def test_tool_side_effects_survive_a_retried_turn(monkeypatch):
         if not done:
             attempts += 1
             if attempts == 1:
-                return ModelResponse(parts=[ToolCallPart("forget", {"values": ["55-81-23"]})])
+                return ModelResponse(parts=[ToolCallPart("forget", {"what": "my locker code"})])
         if attempts == 1:  # first attempt: refused after its tool already ran
             raise BudgetExceededError(9999, 8000, "preflight")
         return ModelResponse(parts=[TextPart("Forgot 55-81-23.")])
 
-    with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
+    erased = worker_answering(
+        Mode.FORGET,
+        {"status": "erased", "summary": "Removed the locker code."},
+        steps=[("erase", {"values": ["55-81-23"]})],
+    )
+    with (
+        erased,
+        get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))),
+    ):
         reply = core.send("me", "A", "Forget my locker code.")
     assert attempts == 2 and "55-81-23" not in reply

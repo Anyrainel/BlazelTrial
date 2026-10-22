@@ -10,11 +10,12 @@ from chatbot import core
 from chatbot.agent.agent import get_agent
 from chatbot.agent.models import build_model
 from chatbot.capabilities.memory import subagent
+from chatbot.capabilities.memory.subagent import Mode
 from chatbot.config import get_settings
 from chatbot.memory import messages as store
 from chatbot.memory import records
 from chatbot.memory.records import MemoryCaller
-from tests.fakes import prompt_text, scripted, search_agent_answering
+from tests.fakes import prompt_text, scripted, search_agent_answering, worker_answering
 
 A = MemoryCaller("me", "A")
 B = MemoryCaller("me", "B")
@@ -24,21 +25,28 @@ def chat(steps: list, final: str = "ok", seen: list | None = None):
     return get_agent().override(model=build_model(get_settings(), raw=scripted(steps, final, seen)))
 
 
-def remember_args(**kw) -> dict:
-    return {
+def saving(**kw):
+    """The write worker saving one record (default: the manager fact)."""
+    args = {
         "store": "long_term",
         "kind": "fact",
         "key": "manager",
         "text": "The user's manager is Priya Raman.",
         **kw,
     }
+    final = {"status": "saved", "summary": args["text"]}
+    return worker_answering(Mode.WRITE, final, steps=[("save", args)])
+
+
+def update(change: str, scope: str = "long_term", seen: list | None = None):
+    return chat([("update_memory", {"change": change, "scope": scope})], seen=seen)
 
 
 # --- writes -------------------------------------------------------------------------------------
 
 
-def test_remember_cites_the_current_message_and_is_shared_across_sessions():
-    with chat([("remember", remember_args())]):
+def test_update_memory_cites_the_current_message_and_is_shared_across_sessions():
+    with saving(), update("The user's manager is Priya Raman."):
         core.send("me", "A", "My manager is Priya Raman.")
     [hit] = records.search_memory(B, "manager", store="long_term")
     view = records.read(B, hit.ref)
@@ -48,39 +56,87 @@ def test_remember_cites_the_current_message_and_is_shared_across_sessions():
 
 
 def test_session_store_stays_in_its_session():
-    args = remember_args(
-        store="session", kind="preference", key="tone", text="Keep replies terse here."
-    )
-    with chat([("remember", args)]):
+    saved = saving(store="session", kind="preference", key="tone", text="Keep replies terse here.")
+    with saved, update("Keep replies terse here.", scope="session"):
         core.send("me", "A", "In this chat keep replies terse.")
     assert records.search_memory(A, "terse", store="session")
     assert records.search_memory(B, "terse") == []
 
 
-def test_update_memory_keeps_the_old_version_as_history():
-    pref = remember_args(kind="preference", key="spelling", text="Use British spelling.")
-    with chat([("remember", pref)]):
+def test_revising_keeps_the_old_version_as_history():
+    pref = {"kind": "preference", "key": "spelling", "text": "Use British spelling."}
+    with saving(**pref), update("Use British spelling."):
         core.send("me", "A", "Always use British spelling.")
     [old] = records.search_memory(A, "spelling", store="long_term")
-    with chat([("update_memory", {"record": old.ref, "text": "Use American spelling."})]):
+    steps = [
+        ("list_records", {"kind": "preference"}),
+        ("revise", {"record": old.ref, "text": "Use American spelling."}),
+    ]
+    with (
+        worker_answering(Mode.WRITE, {"status": "revised", "summary": "American now."}, steps),
+        update("The user now wants American spelling (was British)."),
+    ):
         core.send("me", "A", "Switch to American spelling.")
     chain = records.versions(B, old.ref)
     assert [v.text for v in chain] == ["Use British spelling.", "Use American spelling."]
     assert [v.current for v in chain] == [False, True]
 
 
-def test_write_errors_come_back_to_the_model_not_as_crashes():
+def test_save_refuses_to_duplicate_a_current_record_and_points_at_it():
+    with saving(), update("The user's manager is Priya Raman."):
+        core.send("me", "A", "My manager is Priya Raman.")
     seen: list[str] = []
-    with chat([("update_memory", {"record": "rec:999", "text": "x"})], seen=seen):
+    again = {"store": "long_term", "kind": "fact", "key": "Manager", "text": "Manager: Priya."}
+    final = {"status": "unchanged", "summary": "-"}
+    with worker_answering(Mode.WRITE, final, steps=[("save", again)], seen=seen), update("x"):
+        core.send("me", "B", "My manager is Priya.")
+    assert seen[0].startswith("Not saved: rec:1 is already the current 'Manager' record")
+    assert len(records.list_current(B, store="long_term")) == 1
+
+
+def test_write_errors_come_back_to_the_worker_not_as_crashes():
+    seen: list[str] = []
+    final = {"status": "unchanged", "summary": "-"}
+    steps = [("revise", {"record": "rec:999", "text": "x"})]
+    with worker_answering(Mode.WRITE, final, steps, seen), update("change it"):
         core.send("me", "A", "change it")
     assert seen and seen[0].startswith("Not saved: unknown or not visible: rec:999")
+
+
+def test_a_retried_turn_repeats_update_memory_without_a_second_worker_run():
+    runs = []
+    final = {"status": "saved", "summary": "done"}
+    args = {"change": "The user's partner is Sam."}
+    results: list[str] = []
+    steps = [("update_memory", args), ("update_memory", args)]
+    with (
+        worker_answering(Mode.WRITE, final, steps=[("save", saving_args())], seen=runs),
+        chat(steps, seen=results),
+    ):
+        core.send("me", "A", "My partner is Sam.")
+    assert results[0] == results[1] and len(records.list_current(A)) == 1
+
+
+def saving_args() -> dict:
+    return {"store": "long_term", "kind": "fact", "key": "partner", "text": "Partner is Sam."}
+
+
+def test_write_step_limit_reports_what_was_done(monkeypatch):
+    monkeypatch.setenv("MEMORY_WRITE_MAX_REQUESTS", "2")
+    get_settings.cache_clear()
+    steps = [("save", saving_args()), ("list_records", {})]  # never answers on its own
+    with worker_answering(Mode.WRITE, {"status": "saved", "summary": "x"}, steps):
+        outcome, _ = core._run_sync(
+            subagent.work(Mode.WRITE, A, "Memory update: partner", current_msg_ref=None)
+        )
+    assert outcome.status == "incomplete" and "Ran out of steps" in outcome.summary
 
 
 # --- ask_memory ---------------------------------------------------------------------------------
 
 
 def _remember_manager() -> str:
-    with chat([("remember", remember_args())]):
+    with saving(), update("The user's manager is Priya Raman."):
         core.send("me", "A", "My manager is Priya Raman.")
     return records.search_memory(A, "manager", store="long_term")[0].ref
 
@@ -116,8 +172,9 @@ def test_unseen_sources_are_dropped_and_found_is_downgraded():
 
 
 def test_subagent_only_sees_the_callers_memory():
-    with chat(
-        [("remember", remember_args(store="session", key="secret", text="Vault code is 4412."))]
+    with (
+        saving(store="session", key="secret", text="Vault code is 4412."),
+        update("Vault code is 4412.", scope="session"),
     ):
         core.send("me", "A", "The vault code is 4412.")
     [secret] = [h for h in records.search_memory(A, "vault", store="session") if h.type == "record"]
@@ -208,10 +265,10 @@ def test_ingest_runs_note_maintenance_on_the_shared_path():
 
 
 def test_stored_run_replays_tool_exchanges_without_instructions():
-    with chat([("remember", remember_args())]):
+    with saving(), update("The user's manager is Priya Raman."):
         core.send("me", "A", "My manager is Priya Raman.")
     run = store.thread_messages("A")[-1].run_messages_json
-    assert "remember" in run and '"instructions":null' in run.replace(" ", "")
+    assert "update_memory" in run and '"instructions":null' in run.replace(" ", "")
     returns = [
         p
         for m in store.recent_history("A", budget=10_000, step=1, chars_per_token=3.0).messages
@@ -219,7 +276,7 @@ def test_stored_run_replays_tool_exchanges_without_instructions():
         for p in m.parts
         if isinstance(p, ToolReturnPart)
     ]
-    assert returns and "Saved rec:" in str(returns[0].content)
+    assert returns and "status: saved" in str(returns[0].content)
 
 
 def test_last_step_stops_tools_and_limit_returns_closest_evidence(monkeypatch):

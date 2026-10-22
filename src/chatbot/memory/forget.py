@@ -15,6 +15,7 @@ The values themselves are never stored anywhere.
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from sqlmodel import col, select
@@ -67,14 +68,14 @@ def clean_values(values: list[str]) -> tuple[list[str], list[str]]:
     return list(dict.fromkeys(keep)), rejected
 
 
-def _matcher(values: list[str]) -> re.Pattern:
-    # Whitespace-insensitive, case-insensitive literal match of any value.
-    parts = [r"\s+".join(map(re.escape, v.split())) for v in values]
-    return re.compile("|".join(parts), re.IGNORECASE)
+def matcher(values: list[str]) -> re.Pattern:
+    """Whitespace- and case-insensitive literal match of any value (no values: matches nothing)."""
+    parts = [r"\s+".join(map(re.escape, v.split())) for v in values if v.split()]
+    return re.compile("|".join(parts), re.IGNORECASE) if parts else re.compile(r"(?!)")
 
 
 def redact(text: str, values: list[str]) -> str:
-    return _matcher(values).sub(REDACTED, text) if values and text else text
+    return matcher(values).sub(REDACTED, text) if values and text else text
 
 
 def _redact_json(raw: str, pattern: re.Pattern) -> str:
@@ -92,18 +93,28 @@ def _redact_json(raw: str, pattern: re.Pattern) -> str:
     return json.dumps(walk(json.loads(raw)))
 
 
-def forget_values(user_id: str, values: list[str], *, compact: bool = True) -> ForgetReport:
+def forget_values(
+    user_id: str,
+    values: list[str],
+    *,
+    message_ids: Iterable[int] = (),
+    compact: bool = True,
+) -> ForgetReport:
+    """Erase `values` everywhere, plus whole turns of `message_ids` (messages that discuss the
+    thing without containing a distinctive string)."""
     values, rejected = clean_values(values)
+    explicit = set(message_ids)
     report = ForgetReport(rejected=rejected)
-    if not values:
+    if not values and not explicit:
         return report
-    hit = _matcher(values)
+    hit = matcher(values)
     matches = lambda text: bool(text) and bool(hit.search(text))  # noqa: E731
 
     with _write_lock, session() as s:
         # 1. original messages
         msgs = s.exec(select(Message).where(Message.user_id == user_id)).all()
-        gone_msgs = [m for m in msgs if matches(m.text)]
+        turns = {(m.thread_id, m.turn) for m in msgs if m.id in explicit}
+        gone_msgs = [m for m in msgs if matches(m.text) or (m.thread_id, m.turn) in turns]
         gone_ids = {m.id for m in gone_msgs}
         for delivery in s.exec(
             select(SlackDelivery).where(col(SlackDelivery.reply_message_id).in_(gone_ids))

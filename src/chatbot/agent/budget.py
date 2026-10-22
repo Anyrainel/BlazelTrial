@@ -272,7 +272,7 @@ class BudgetedModel(WrapperModel):
         over = self._over(usage.input_tokens)
         error = "reported_over_budget" if over else None
         self._log(usage, measure, error, shrunk_from=shrunk_from)
-        if measure.raw > 0 and usage.input_tokens:
+        if measure.raw > 0 and usage.input_tokens > measure.tokens:  # we judged it too small
             learned = min(usage.input_tokens / measure.raw * 1.02, _MAX_SCALE)
             if learned > self.scale[measure.method]:
                 logger.warning(

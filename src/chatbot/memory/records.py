@@ -412,6 +412,32 @@ def versions(caller: MemoryCaller, ref: str) -> list[RecordView]:
         return [_view(s, x, with_sources=False) for x in chain[-MAX_VERSIONS:]]
 
 
+def list_current(
+    caller: MemoryCaller, *, store: str = "both", kind: str | None = None, k: int = 10
+) -> list[RecordView]:
+    """The newest current records the caller may see, to survey a topic without keywords."""
+    if store not in ("session", "long_term", "both"):
+        raise MemoryAccessError("store must be session, long_term or both")
+    stores = {Store.SESSION, Store.LONG_TERM} if store == "both" else {Store(store)}
+    with session() as s:
+        query = select(MemoryRecord).where(
+            MemoryRecord.user_id == caller.user_id, col(MemoryRecord.superseded_at).is_(None)
+        )
+        if kind:
+            try:
+                query = query.where(MemoryRecord.kind == RecordKind(kind))
+            except ValueError:
+                raise MemoryAccessError("kind must be fact, preference or task") from None
+        rows = s.exec(query.order_by(col(MemoryRecord.id).desc())).all()
+        visible = [
+            r
+            for r in rows
+            if r.store in stores
+            and (r.store == Store.LONG_TERM or r.session_id == caller.session_id)
+        ]
+        return [_view(s, r, with_sources=False) for r in visible[: max(1, min(k, MAX_K))]]
+
+
 # --- saved tool outputs and checkpoints (written by the context fitter) -------------------------
 
 

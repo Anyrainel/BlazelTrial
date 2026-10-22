@@ -264,3 +264,26 @@ def test_a_low_count_raises_that_methods_scale(settings):
     Agent(model).run_sync("hi")
 
     assert model.scale["estimate"] > before
+
+
+def test_an_exact_or_generous_count_leaves_the_scale_alone(settings):
+    import asyncio
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    from chatbot.agent.budget import BudgetedModel, CallLog
+
+    model = BudgetedModel(
+        reply_with_usage(300),
+        max_input_tokens=8000,
+        use_server_count=False,
+        chars_per_token=3.0,
+        strict=False,
+        log=CallLog(settings.llm_log_path),
+        counter=_fixed_counter(300),  # exact: the provider then reports 300
+        counter_margin=1.05,
+    )
+    messages = [ModelRequest(parts=[UserPromptPart("hi")])]
+    asyncio.run(model.request(messages, None, ModelRequestParameters()))
+    assert model.scale["tokenizer"] == 1.05

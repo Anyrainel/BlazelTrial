@@ -7,6 +7,7 @@ import logging
 import threading
 from dataclasses import replace
 from datetime import datetime
+from weakref import WeakKeyDictionary
 
 from pydantic_ai.messages import (
     CachePoint,
@@ -128,6 +129,11 @@ async def _reply(user_id: str, thread_id: str, user_msg) -> tuple[str, str, list
     return reply, ModelMessagesTypeAdapter.dump_json(stored).decode(), forgotten
 
 
+# One turn at a time per conversation, whatever the surface: a second message in the same
+# thread waits for the first, so replies keep their order and memory writes never interleave.
+_turn_locks: WeakKeyDictionary = WeakKeyDictionary()
+
+
 async def _handle(
     user_id: str,
     thread_id: str,
@@ -142,6 +148,19 @@ async def _handle(
     The user message is stored (and indexed) before the model runs, so memory writes during
     the turn can cite it as their source.
     """
+    locks = _turn_locks.setdefault(asyncio.get_running_loop(), {})
+    async with locks.setdefault(thread_id, asyncio.Lock()):
+        return await _handle_locked(user_id, thread_id, text, generate, reply, at)
+
+
+async def _handle_locked(
+    user_id: str,
+    thread_id: str,
+    text: str,
+    generate: bool,
+    reply: str | None,
+    at: datetime | None,
+) -> str | None:
     search.repair_once(get_engine())  # heal index rows lost to a crash after a message commit
     store.ensure_thread(user_id, thread_id)
     source = Source.LIVE if generate else Source.INGEST

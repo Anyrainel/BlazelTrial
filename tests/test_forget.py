@@ -5,6 +5,8 @@ from datetime import datetime
 from chatbot import core
 from chatbot.agent.agent import get_agent
 from chatbot.agent.models import build_model
+from chatbot.capabilities.memory import subagent
+from chatbot.capabilities.memory.subagent import Mode
 from chatbot.capabilities.messaging import sent_messages
 from chatbot.config import get_settings
 from chatbot.memory import messages as store
@@ -14,7 +16,7 @@ from chatbot.memory.forget import forget_values
 from chatbot.memory.models import EpisodeNote, Fact, FactKind, MemoryRecord, OutboundMessage, Scope
 from chatbot.memory.records import MemoryCaller
 from scenarios.fixtures.slack_history import generate
-from tests.fakes import scripted, search_agent_answering
+from tests.fakes import scripted, worker_answering
 
 DM = MemoryCaller("me", "slack-dm")
 A = MemoryCaller("me", "A")
@@ -100,18 +102,16 @@ def test_forget_removes_the_value_everywhere_including_disk():
     with session() as s:
         notes_before = len(s.exec(EpisodeNote.__table__.select()).all())
 
-    # The turn: look it up, forget it, and (badly) echo it in the reply.
-    answer = {
-        "status": "found",
-        "answer": ADDRESS,
-        "sources": [{"ref": address_msg(), "excerpt": ADDRESS}],
-    }
-    steps = [
-        ("ask_memory", {"question": "user's home address"}),
-        ("forget", {"values": [ADDRESS, "Larkspur Lane"]}),
+    # The turn: the worker finds how it was written, erases it, and the chat model (badly)
+    # echoes the address in its reply.
+    worker_steps = [
+        ("grep", {"text": "Larkspur"}),
+        ("erase", {"values": [ADDRESS, "Larkspur Lane"]}),
     ]
+    done = {"status": "erased", "summary": "Removed the address everywhere."}
+    steps = [("forget", {"what": "my home address"})]
     with (
-        search_agent_answering(answer, steps=[("search", {"query": "address"})]),
+        worker_answering(Mode.FORGET, done, steps=worker_steps),
         get_agent().override(
             model=build_model(get_settings(), raw=scripted(steps, f"Done, I forgot {ADDRESS}."))
         ),
@@ -206,3 +206,86 @@ def test_forget_keeps_fulfilled_draft_completed_in_replay():
     assert "completed" in history[1].parts[0].content
     assert all("Cobalt Finch" not in r.text for r in rows)
     assert not on_disk("Cobalt Finch")
+
+
+# --- the forget worker: finding, guarding and erasing intelligently -------------------------------
+
+
+def run_forget(steps: list, seen: list | None = None, final: dict | None = None):
+    final = final or {"status": "erased", "summary": "done"}
+    with worker_answering(Mode.FORGET, final, steps=steps, seen=seen):
+        return core._run_sync(subagent.work(Mode.FORGET, DM, "Forget: my address"))
+
+
+def test_grep_finds_exact_strings_everywhere_when_forgetting_but_only_the_session_otherwise():
+    core.ingest("me", "A", "Locker code is 55-81-23.", reply="ok")
+    core.ingest("me", "B", "Gym locker is 55-81-23 too.", reply="ok")
+    seen: list[str] = []
+    with worker_answering(
+        Mode.READ, {"status": "not_found", "answer": "-"}, [("grep", {"text": "55-81-23"})], seen
+    ):
+        core._run_sync(subagent.ask(A, "locker?"))
+    assert "Matches: 1 message" in seen[0]  # session A only
+    seen.clear()
+    run_forget([("grep", {"text": "55 81 23".replace(" ", "-")})], seen)
+    assert "Matches: 2 message" in seen[0]  # every conversation
+
+
+def test_erase_refuses_a_string_that_matches_too_many_messages(monkeypatch):
+    monkeypatch.setenv("MEMORY_ERASE_MAX_MESSAGES", "2")
+    get_settings.cache_clear()
+    for i in range(4):
+        core.ingest("me", "A", f"Sam picked up the kids, round {i}.", reply="ok")
+    seen: list[str] = []
+    outcome, _ = run_forget([("erase", {"values": ["picked up the kids"]})], seen)
+    assert seen[0].startswith("Nothing erased") and "matches 4 messages" in seen[0]
+    assert len(store.thread_messages("A")) == 8
+    seen.clear()
+    run_forget([("erase", {"values": ["picked up the kids"], "many_ok": True})], seen)
+    assert [m.text for m in store.thread_messages("A")] == ["ok"] * 4  # only the replies
+
+
+def test_erase_by_message_ref_deletes_the_whole_turn_and_purges_the_bytes():
+    core.ingest("me", "A", "We are staying at the blue house by the harbour.", reply="Nice view!")
+    core.ingest("me", "A", "Unrelated: I like tea.", reply="ok")
+    target = next(m for m in store.thread_messages("A") if "harbour" in m.text)
+    outcome, deps = run_forget([("erase", {"values": [], "messages": [refs.msg(target.id)]})])
+    texts = [m.text for m in store.thread_messages("A")]
+    assert texts == ["Unrelated: I like tea.", "ok"]  # the reply to the turn went too
+    assert deps.erased_refs and deps.erased == []
+
+
+def test_forget_tool_purges_disk_after_a_value_less_erase():
+    core.ingest("me", "A", "We are staying at the blue house by the harbour.", reply="Nice view!")
+    target = next(m for m in store.thread_messages("A") if "harbour" in m.text)
+    steps = [("forget", {"what": "where we are staying"})]
+    erase = [("erase", {"messages": [refs.msg(target.id)], "values": []})]
+    done = {"status": "erased", "summary": "Removed the stay."}
+    with (
+        worker_answering(Mode.FORGET, done, steps=erase),
+        get_agent().override(model=build_model(get_settings(), raw=scripted(steps, "Done."))),
+    ):
+        core.send("me", "A", "Forget where we're staying.")
+    assert not on_disk("harbour")
+
+
+def test_erase_reports_when_a_value_is_still_found_and_never_echoes_it_in_the_summary():
+    core.ingest("me", "A", "My locker code is 55-81-23.", reply="ok")
+    outcome, deps = run_forget(
+        [("erase", {"values": ["55-81-23"]})],
+        final={"status": "erased", "summary": "Erased code 55-81-23."},
+    )
+    assert "55-81-23" not in outcome.summary and "[forgotten]" in outcome.summary
+    assert deps.erased == ["55-81-23"]
+
+
+def test_forget_tool_purges_disk_when_the_run_never_carried_the_value():
+    core.ingest("me", "A", "My locker code is 55-81-23.", reply="Noted.")
+    steps = [("forget", {"what": "my locker code"})]
+    done = {"status": "erased", "summary": "Removed the locker code."}
+    with (
+        worker_answering(Mode.FORGET, done, steps=[("erase", {"values": ["55-81-23"]})]),
+        get_agent().override(model=build_model(get_settings(), raw=scripted(steps, "Done."))),
+    ):
+        core.send("me", "A", "Forget my locker code.")
+    assert not on_disk("55-81-23")
