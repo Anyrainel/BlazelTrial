@@ -2,6 +2,22 @@
 
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
+## Slack integration evaluation (2026-10-21 Pacific)
+
+Evaluated the running build in real Hazel DMs and #test; report:
+[SLACK_EVALUATION.md](SLACK_EVALUATION.md). Started the previously stopped Slack
+process. DM response, cross-surface recall, Slack thread routing and local forget
+passed. Found failed-event deduplication suppressing retries (offline repro),
+out-of-order rapid replies and unconverted Markdown (live). Confirmed channel
+mentions are unsupported even after inviting Hazel; this matches DM-only scope.
+116 offline tests passed; 26 live model calls, max input 5,269, no violations.
+Assumption: evaluation authorizes synthetic QA messages and a separate CLI recall
+session; retained Slack messages as evidence, changed no production code.
+Computer-use activation/bounds errors required using the signed-in Slack browser.
+Evaluation mistakes caught: corrected a malformed inline Python probe; a plain
+SQLite dump could not load vec0, so checked the DB bytes directly for the forget
+probe. Neither failure was treated as a product defect.
+
 ## Live results (scenarios 1, 4, 5 — 2026-10-20)
 | Model | S1 cross-thread | S4 changed mind | S5 stays local | Calls | Max input | Pre-flight ≥ actual |
 |---|---|---|---|---|---|---|
@@ -210,3 +226,4 @@ look up the partner's name before asking; subagent prompt now rewords before not
 | 2026-10-21 | | Step 5: forget sweep + tool + disk purge (S6 live PASS); step 6 started: scenario runner, retrieval eval |
 | 2026-10-22 | | Prompt fixes (memory before "don't know"), subagent answer-early + last-step guard, retry outputs fix; S1/S4/S6 re-run PASS |
 | 2026-10-22 | | Step 6: full runs - Claude 7/7 twice, Meta 7/7 (log re-scored); subagent caching; step 7: HTTP, Slack (connects), web UI, README, NOTES |
+| 2026-10-22 | | Local Bonsai 2 27B via PrismML llama.cpp fork; autostart from the model factory + `chatbot local-server` (D37) |
