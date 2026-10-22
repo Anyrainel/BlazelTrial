@@ -26,7 +26,7 @@ def ensure_thread(user_id: str, thread_id: str) -> Thread:
     with session() as s:
         thread = s.get(Thread, thread_id)
         if thread is None:
-            kind = ThreadKind.SLACK if thread_id == SLACK_THREAD_ID else ThreadKind.SESSION
+            kind = ThreadKind.SLACK if thread_id.startswith("slack-") else ThreadKind.SESSION
             thread = Thread(id=thread_id, user_id=user_id, kind=kind)
             s.add(thread)
             s.commit()

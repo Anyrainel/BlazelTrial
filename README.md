@@ -1,7 +1,7 @@
 # Chatbot with shared memory under an 8k-token budget
 
 One user, two surfaces: parallel **main-chat sessions** (CLI, HTTP, web) and one endless
-**Slack DM**. Both call a single core, `send(user_id, thread_id, text) -> reply`. Memory is
+**Slack DMs and channel @mentions**. Both call a single core, `send(user_id, thread_id, text) -> reply`. Memory is
 persisted in SQLite and reached by the agent through bounded tools; **every model call stays
 under `MAX_INPUT_TOKENS` (default 8,000)**, enforced before sending and logged per call.
 
@@ -41,7 +41,7 @@ uv run python scripts/gen_docs.py
 
 ## Run the core
 
-One-shot call, the same entry point every surface uses (`thread_id` = a session id or `slack-dm`):
+One-shot call, the same entry point every surface uses (`thread_id` = a session id, `slack-dm`, or `slack-<channel ID>`):
 
 ```bash
 uv run chatbot send me s1 "My manager is Priya Raman."
@@ -94,18 +94,40 @@ reads/writes), `within_budget`.
 1. Create an app at https://api.slack.com/apps ("From scratch") in a workspace you control.
 2. **Socket Mode**: enable it and create an app-level token with `connections:write`. This is
    `SLACK_APP_TOKEN` (`xapp-…`). No public URL or tunnel is needed.
-3. **OAuth & Permissions** bot scopes: `chat:write`, `im:history`, `im:read`. Install to the
+3. **OAuth & Permissions** bot scopes: `chat:write`, `im:history`, `im:read`, `app_mentions:read`. Install to the
    workspace and copy the bot token into `SLACK_BOT_TOKEN` (`xoxb-…`).
-4. **Event Subscriptions**: enable, and subscribe to the bot event `message.im`.
+4. **Event Subscriptions**: enable, and subscribe to bot events `message.im` and `app_mention`.
 5. **App Home**: enable the Messages tab ("Allow users to send messages").
-6. Optional: `SLACK_ALLOWED_USER=U…` to answer only your own Slack user id.
+6. Invite Hazel to each desired channel with `/invite @Hazel` (including private channels).
+7. Optional: `SLACK_ALLOWED_USER=U…` restricts both DMs and mentions to your Slack user id.
+   Without it, all accepted authors share the same personal identity and memory.
+8. When adding scopes to an existing app, reinstall it to grant them, then restart
+   `chatbot slack`. Adding an event whose scope is already granted needs only Save Changes.
 
 ```bash
 uv run chatbot slack
 ```
 
 DM the app: every DM goes to the `slack-dm` thread for the single configured user, so
-something told in a main-chat session can be asked in Slack and vice versa.
+shared long-term facts can be recalled from main chat, DMs, and channel conversations.
+Mention `@Hazel` in a channel to chat. Each unique channel has one conversation
+`slack-<channel ID>`; Slack reply threads share that channel context. Channel answers
+are threaded under the request or its existing parent, without broadcast. Every
+channel follow-up needs another mention. DM replies keep their incoming routing;
+all DM reply threads still share `slack-dm`. Session records and draft-only rules
+stay local; long-term facts are shared through the core's bounded memory tools.
+
+The app ignores ordinary channel messages, bot/self messages, edits and file-share
+subtypes. No `message.channels`/`message.groups` subscriptions or history scopes are
+required for mention-only handling. Existing broader subscriptions are harmless:
+the adapter filters them before calling core. Run one Slack worker per state DB.
+Turns are serialized per conversation through reply delivery. Generated replies
+have persistent delivery receipts so a posting retry does not rerun tools. The
+listener retries transient failures three times; exhausted retries are logged.
+There remains a crash window between core completion and saving its receipt, and
+between Slack accepting a post and confirming it locally; exactly-once delivery
+across those crashes is not guaranteed. Pending replies deleted by forget are
+suppressed. See [Slack evaluation](docs/SLACK_EVALUATION.md) for live evidence.
 
 ## Run the scenario script
 

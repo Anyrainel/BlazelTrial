@@ -6,8 +6,9 @@ Stack rationale: [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## What this is
 A single-user chatbot with one core, `send(user_id, thread_id, text) -> reply`, served to a
-CLI / HTTP / web main chat (many parallel sessions) and a Slack DM (`thread_id="slack-dm"`, one
-endless thread). The hard part is **memory + context under an 8k input-token budget**, not the UI.
+CLI / HTTP / web main chat (many parallel sessions) and Slack DMs (`thread_id="slack-dm"`, one
+endless thread) plus explicit channel @mentions (`thread_id="slack-" + channel ID`,
+one conversation per channel; authorized extension to the original assignment). The hard part is **memory + context under an 8k input-token budget**, not the UI.
 
 ## Stack
 Python 3.13 · uv · PydanticAI (models: local Bonsai 2 27B default, autostarted; Claude Sonnet

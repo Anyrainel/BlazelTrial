@@ -2,6 +2,9 @@
 
 > Clean restatement of `assignment.md`. If the two ever disagree, `assignment.md` wins.
 > Assumptions we make go in `NOTES.md`, not here.
+> Authorized extension (2026-10-22 Pacific): the user explicitly expanded Slack
+> beyond the original assignment's DM-only surface to channel @mentions. This
+> extension takes precedence for channel behavior; the original assignment stays intact.
 
 ## 1. Goal
 
@@ -29,7 +32,14 @@ documents into a small context window.
 ```
 send(user_id, thread_id, text) -> reply
 ```
-- `thread_id` is a session id, or the literal `slack-dm`.
+- `thread_id` is a session id, the literal `slack-dm`, or `slack-` plus the unique
+  Slack channel ID. Channel Slack reply threads share that channel conversation.
+- Slack accepts human DMs and explicit @Hazel channel mentions. Replies to channel
+  mentions go under the request (or existing parent); each follow-up must mention
+  Hazel again. DM threading remains unchanged.
+- Shared long-term user facts are recallable across channels, DMs and existing main
+  sessions. Draft-only/session instructions stay local. Validate this with accepted
+  turns in each conversation, rather than treating ignored messages as isolation.
 - Used by **both** surfaces. No surface-specific logic in the core.
 - Must be callable by evaluators **from the command line or over HTTP**.
 

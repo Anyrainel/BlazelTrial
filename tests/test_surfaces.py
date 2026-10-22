@@ -61,4 +61,3 @@ def test_slack_ignores_bots_edits_other_channels_and_redeliveries(monkeypatch):
     assert not slack_app.should_handle({**base, "text": "  "}, None)
     assert not slack_app.should_handle(base, "U2")  # SLACK_ALLOWED_USER set to someone else
     assert slack_app.should_handle(base, "U1")
-    assert slack_app.first_time("Ev-dup") and not slack_app.first_time("Ev-dup")

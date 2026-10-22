@@ -32,6 +32,15 @@ class Thread(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class SlackDelivery(SQLModel, table=True):
+    """Durable delivery receipt; references core output without copying personal content."""
+
+    id: str = Field(primary_key=True)  # workspace + channel + Slack message timestamp
+    reply_message_id: int | None = None  # forget clears it before deleting the reply
+    delivered: bool = False
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class Message(SQLModel, table=True):
     """One user or assistant message. A turn = a user message plus its assistant reply."""
 
