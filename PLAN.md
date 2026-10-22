@@ -16,9 +16,11 @@ session; persistence does not imply cross-session visibility. Detailed scope/lif
 open, subject to the assignment's sharing, local-instruction, preference-history and forgetting
 scenarios. Start with current tool schemas and instructions loaded and measure their cost.
 
-Implementation status (2026-10-21): sequence steps 1-3 are implemented (storage contracts,
-source + note search, ask_memory subagent and write tools; harness injection and automatic
-extraction removed). Steps 4-7 follow.
+Implementation status (2026-10-22): sequence steps 1-7 are implemented. Storage contracts,
+source + note search, ask_memory subagent and write tools (injection and automatic extraction
+removed), long-run compaction and checkpoints, forget, scenario runner (Claude 7/7 twice; Meta
+7/7 from the re-scored log), HTTP/web/Slack surfaces and README/NOTES. Open items: docs/WORKLOG.md
+"To revisit"; the real Slack DM round trip and the screen recording are manual.
 
 ## Next design/refactor work
 1. Define bounded session/long-term search, read and write contracts, stable record IDs,
