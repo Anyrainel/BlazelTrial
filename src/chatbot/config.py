@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 Provider = Literal["anthropic", "meta", "local"]
-TokenCountMode = Literal["auto", "server", "estimate"]
+TokenCountMode = Literal["auto", "server", "tokenize", "estimate"]
 
 
 class Settings(BaseSettings):
@@ -42,16 +42,21 @@ class Settings(BaseSettings):
     max_input_tokens: int = 8000
     # How to size a request before sending it:
     #   server   = provider token-count endpoint (falls back to estimate if unsupported)
+    #   tokenize = the local llama.cpp server renders its chat template and tokenizes (exact)
     #   estimate = local character-based estimate
-    #   auto     = server for anthropic and meta, estimate otherwise (local servers)
+    #   auto     = server for anthropic and meta, tokenize for local (each falls back to estimate)
     token_count_mode: TokenCountMode = "auto"
     # Conservative chars-per-token ratio for the local estimate (lower = safer).
     estimate_chars_per_token: float = 3.0
     # Multiplier on the local estimate. Measured on Meta: provider count was up to 1.31x our raw
     # estimate (hidden structured-output/tool framing), so 1.5 keeps the pre-flight conservative.
     estimate_safety_factor: float = 1.5
-    # Raise when the provider-reported input exceeds the cap (otherwise only logged).
-    budget_strict: bool = True
+    # Safety margin on the local tokenizer's count (template framing of replayed tool calls is
+    # approximated). Any count that comes in low raises its scale automatically.
+    tokenizer_margin: float = 1.05
+    # Raise when the provider-reported input exceeds the cap. Off by default: a response that
+    # already came back is more useful than an error, and the overshoot is logged and learned from.
+    budget_strict: bool = False
 
     # Max estimated tokens of verbatim recent turns replayed into each chat request.
     history_token_budget: int = 2500
@@ -109,18 +114,24 @@ class Settings(BaseSettings):
         return path
 
     @property
+    def count_method(self) -> Literal["server", "tokenize", "estimate"]:
+        """How pre-flight sizes requests for the configured provider."""
+        if self.token_count_mode != "auto":
+            return self.token_count_mode
+        return {"anthropic": "server", "meta": "server", "local": "tokenize"}[self.llm_provider]
+
+    @property
     def uses_server_count(self) -> bool:
         """Whether pre-flight sizes requests with the provider's count endpoint."""
-        return self.token_count_mode == "server" or (
-            self.token_count_mode == "auto" and self.llm_provider in ("anthropic", "meta")
-        )
+        return self.count_method == "server"
 
     @property
     def context_target_tokens(self) -> int:
-        """Estimated-token target for assembling a request. When pre-flight will use the local
-        estimate (x safety factor), aim lower by the same factor so assembled requests pass."""
+        """Estimated-token target for assembling a request. Exact counts (provider or tokenizer)
+        shrink oversized requests anyway; only a pure local estimate (x safety factor) aims lower
+        by the same factor so assembled requests pass."""
         target = self.max_input_tokens * self.context_fill_ratio
-        if not self.uses_server_count:
+        if self.count_method == "estimate":
             target /= self.estimate_safety_factor
         return int(target)
 

@@ -11,6 +11,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from chatbot.agent import local_server
 from chatbot.agent.budget import BudgetedModel, CallLog
+from chatbot.agent.token_count import local_counter
 from chatbot.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,10 @@ def build_model(settings: Settings, raw: Model | None = None) -> BudgetedModel:
         raw or build_raw_model(settings),
         max_input_tokens=settings.max_input_tokens,
         use_server_count=settings.uses_server_count,
+        counter=local_counter(settings.local_base_url)
+        if settings.count_method == "tokenize"
+        else None,
+        counter_margin=settings.tokenizer_margin,
         chars_per_token=settings.estimate_chars_per_token,
         safety_factor=settings.estimate_safety_factor,
         strict=settings.budget_strict,

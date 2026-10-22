@@ -61,6 +61,7 @@ def test_preflight_refuses_before_sending(settings):
 
 
 def test_reported_usage_over_budget_raises_in_strict_mode(settings):
+    settings.budget_strict = True
     agent = Agent(build_model(settings, raw=reply_with_usage(9000)))
 
     with call_context(thread_id="slack-dm", purpose="test"), pytest.raises(BudgetExceededError):
@@ -73,7 +74,6 @@ def test_reported_usage_over_budget_raises_in_strict_mode(settings):
 
 
 def test_reported_over_budget_only_logged_when_not_strict(settings):
-    settings.budget_strict = False
     agent = Agent(build_model(settings, raw=reply_with_usage(9000)))
 
     assert agent.run_sync("hi").output == "ok"
@@ -123,3 +123,144 @@ def test_estimate_counts_only_the_latest_instructions():
     params = ModelRequestParameters()
     single = estimate_tokens(one, params, 3.0)
     assert estimate_tokens(many, params, 3.0) < single + 5 * 20  # not 5x the instructions
+
+
+# --- resilience: shrink instead of failing, exact counters, learned scale ----------------------
+
+
+def _bounded(settings, limit, calls=None, **kwargs):
+    settings.max_input_tokens = limit
+    return build_model(settings, raw=reply_with_usage(10, calls)), settings
+
+
+def test_oversized_message_is_shrunk_and_sent_not_refused(settings):
+    calls: list = []
+    model, _ = _bounded(settings, 500, calls)
+    huge = "start " + "word " * 3000 + " the-end"
+
+    assert Agent(model).run_sync(huge).output == "ok"
+
+    sent = calls[0][-1].parts[-1].content
+    assert len(sent) < len(huge) and "omitted to fit the context window" in sent
+    assert sent.startswith("start") and sent.endswith("the-end")  # head and tail survive
+    [entry] = read_log(settings)
+    assert entry["error"] is None and entry["shrunk_from"] > 500
+    assert entry["preflight_tokens"] < 500
+
+
+def test_big_tool_results_and_old_turns_are_trimmed_without_splitting_calls():
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ToolCallPart,
+        ToolReturnPart,
+        UserPromptPart,
+    )
+
+    from chatbot.agent.shrink import shrink_messages
+
+    def turn(n: int, payload: str):
+        return [
+            ModelRequest(parts=[UserPromptPart(f"question {n}")]),
+            ModelResponse(parts=[ToolCallPart("lookup", {"q": n}, tool_call_id=f"c{n}")]),
+            ModelRequest(parts=[ToolReturnPart("lookup", payload, tool_call_id=f"c{n}")]),
+            ModelResponse(parts=[TextPart(f"answer {n}")]),
+        ]
+
+    history = [m for n in range(1, 6) for m in turn(n, "x" * 6000)]
+    history.append(ModelRequest(parts=[UserPromptPart("latest question")]))
+
+    def size(ms):
+        return sum(len(str(getattr(p, "content", ""))) + 40 for m in ms for p in m.parts) // 3
+
+    shrunk = shrink_messages(history, size, 600)
+
+    assert size(shrunk) <= 600
+    assert shrunk[-1].parts[0].content == "latest question"  # the current message stays whole
+    calls = {p.tool_call_id for m in shrunk for p in m.parts if isinstance(p, ToolCallPart)}
+    returns = {p.tool_call_id for m in shrunk for p in m.parts if isinstance(p, ToolReturnPart)}
+    assert calls == returns  # a call never loses its return
+    assert len(history) == 21  # the stored history itself is untouched
+
+
+def test_request_that_cannot_shrink_is_still_refused_before_sending(settings):
+    calls: list = []
+    model, _ = _bounded(settings, 100, calls)
+    agent = Agent(model, instructions="fixed instructions " * 400)
+
+    with pytest.raises(BudgetExceededError) as exc:
+        agent.run_sync("hi")
+
+    assert exc.value.stage == "preflight" and calls == []
+
+
+def test_the_limit_is_exclusive(settings):
+    import asyncio
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    from chatbot.agent.budget import BudgetedModel, CallLog
+
+    def preflight(counted: int):
+        model = BudgetedModel(
+            reply_with_usage(1),
+            max_input_tokens=100,
+            use_server_count=False,
+            chars_per_token=3.0,
+            strict=False,
+            log=CallLog(settings.llm_log_path),
+            counter=_fixed_counter(counted),
+            counter_margin=1.0,
+        )
+        messages = [ModelRequest(parts=[UserPromptPart("hi")])]
+        return asyncio.run(model.preflight(messages, None, ModelRequestParameters()))
+
+    assert preflight(98) == (99, "tokenizer")  # 99 tokens: below 100
+    with pytest.raises(BudgetExceededError):
+        preflight(99)  # 100 tokens would not be below the limit
+
+
+def _fixed_counter(n: int):
+    async def count(messages, params):
+        return n
+
+    return count
+
+
+def test_tokenizer_count_is_used_and_falls_back_to_the_estimate(settings):
+    import asyncio
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    from chatbot.agent.budget import BudgetedModel, CallLog
+
+    async def broken(messages, params):
+        raise OSError("server down")
+
+    def make(counter):
+        return BudgetedModel(
+            reply_with_usage(1),
+            max_input_tokens=8000,
+            use_server_count=False,
+            chars_per_token=3.0,
+            strict=False,
+            log=CallLog(settings.llm_log_path),
+            counter=counter,
+        )
+
+    messages = [ModelRequest(parts=[UserPromptPart("hi")])]
+    params = ModelRequestParameters()
+    assert asyncio.run(make(_fixed_counter(500)).measure(messages, None, params)).method == (
+        "tokenizer"
+    )
+    assert asyncio.run(make(broken).measure(messages, None, params)).method == "estimate"
+
+
+def test_a_low_count_raises_that_methods_scale(settings):
+    model = build_model(settings, raw=reply_with_usage(900))  # estimate said ~12, reality 900
+    before = model.scale["estimate"]
+
+    Agent(model).run_sync("hi")
+
+    assert model.scale["estimate"] > before
