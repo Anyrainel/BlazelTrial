@@ -16,8 +16,8 @@ TokenCountMode = Literal["auto", "server", "estimate"]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")
 
-    llm_provider: Provider = "anthropic"
-    llm_model: str = "claude-sonnet-5-5"
+    llm_provider: Provider = "local"
+    llm_model: str = "bonsai-2-27b"
 
     anthropic_api_key: SecretStr | None = None
     meta_api_key: SecretStr | None = None

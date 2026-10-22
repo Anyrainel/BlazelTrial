@@ -10,9 +10,9 @@ CLI / HTTP / web main chat (many parallel sessions) and a Slack DM (`thread_id="
 endless thread). The hard part is **memory + context under an 8k input-token budget**, not the UI.
 
 ## Stack
-Python 3.13 · uv · PydanticAI (models: Claude Sonnet 5.5 default, Meta Muse Spark 1.3
-Contributor, local Bonsai 2 for testing) · SQLModel on SQLite (+ FTS5, sqlite-vec,
-fastembed) · FastAPI · Slack Bolt (Socket Mode) · pytest · ruff ·
+Python 3.13 · uv · PydanticAI (models: local Bonsai 2 27B default, autostarted; Claude Sonnet
+5.5; Meta Muse Spark 1.3 Contributor) · SQLModel on SQLite (+ FTS5, sqlite-vec, fastembed) ·
+FastAPI · Slack Bolt (Socket Mode) · pytest · ruff ·
 web: React + Vite + TypeScript + assistant-ui (npm).
 
 ## Layout
