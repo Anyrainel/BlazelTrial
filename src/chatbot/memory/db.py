@@ -37,6 +37,9 @@ def get_engine() -> Engine:
 def _add_missing_columns(engine: Engine) -> None:
     """Additive schema change for existing databases (no migration framework)."""
     with engine.begin() as conn:
+        # Several HTTP requests (or surface processes) can initialize together.
+        # Serialize the check and ALTER, not just the ALTER itself.
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
         have = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(message)")}
         if "forgotten" not in have:
             conn.exec_driver_sql(

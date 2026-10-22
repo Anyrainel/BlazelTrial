@@ -153,6 +153,7 @@ class BudgetedModel(WrapperModel):
         log: CallLog,
         counter: Counter | None = None,
         counter_margin: float = 1.05,
+        require_count: bool = False,
     ):
         super().__init__(wrapped)
         self.max_input_tokens = max_input_tokens
@@ -161,6 +162,7 @@ class BudgetedModel(WrapperModel):
         self.strict = strict
         self.log = log
         self.counter = counter
+        self.require_count = require_count
         # Multiplier per counting method; raised (never lowered) when a provider reports more.
         self.scale = {"server": 1.0, "tokenizer": counter_margin, "estimate": safety_factor}
 
@@ -183,10 +185,12 @@ class BudgetedModel(WrapperModel):
                 logger.warning("server token count failed, falling back: %s", exc)
         if raw is None and self.counter is not None:
             try:
-                raw, method = await self.counter(messages, params), "tokenizer"
+                raw, method = await self.counter(messages, params, settings), "tokenizer"
             except Exception as exc:  # server down, endpoint missing, ...
                 logger.warning("tokenizer count failed, falling back to estimate: %s", exc)
         if raw is None:
+            if self.require_count:
+                raise RuntimeError("Token counting unavailable; inference was not sent.")
             raw = estimate_tokens(messages, params, self.chars_per_token)
         return Measure(int(raw * self.scale[method]) + 1, raw, method)
 

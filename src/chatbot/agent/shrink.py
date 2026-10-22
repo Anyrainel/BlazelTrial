@@ -32,10 +32,16 @@ def clip_middle(text: str, limit: int) -> str:
     """`text` cut to about `limit` characters, keeping its start and end."""
     if len(text) <= limit:
         return text
+    # The marker consumes part of the limit too. Otherwise clipping near a floor
+    # can grow the text and prevent the shrinking loop from making progress.
     omitted = len(text) - limit
-    head = int(limit * 0.6)
     marker = f"\n…[{omitted} characters omitted to fit the context window]…\n"
-    return text[:head] + marker + text[len(text) - (limit - head) :]
+    if len(marker) >= limit:
+        return text[:limit]
+    keep = limit - len(marker)
+    head = int(keep * 0.6)
+    tail = keep - head
+    return text[:head] + marker + text[-tail:]
 
 
 def _returns(messages: list[ModelMessage]) -> list[tuple[int, int]]:

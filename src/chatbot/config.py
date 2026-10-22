@@ -54,9 +54,8 @@ class Settings(BaseSettings):
     # Safety margin on the local tokenizer's count (template framing of replayed tool calls is
     # approximated). Any count that comes in low raises its scale automatically.
     tokenizer_margin: float = 1.05
-    # Raise when the provider-reported input exceeds the cap. Off by default: a response that
-    # already came back is more useful than an error, and the overshoot is logged and learned from.
-    budget_strict: bool = False
+    # Fail on a reported overshoot as well as refusing over-budget requests before inference.
+    budget_strict: bool = True
 
     # Max estimated tokens of verbatim recent turns replayed into each chat request.
     history_token_budget: int = Field(default=2500, ge=0)

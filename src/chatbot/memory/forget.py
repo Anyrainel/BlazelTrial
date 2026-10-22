@@ -45,7 +45,6 @@ from chatbot.memory.models import (
 )
 from chatbot.memory.records import _write_lock
 
-MIN_VALUE_CHARS = 5
 REDACTED = "[forgotten]"
 
 
@@ -67,11 +66,11 @@ class ForgetReport:
 
 
 def clean_values(values: list[str]) -> tuple[list[str], list[str]]:
-    """Normalized values to forget, and the ones rejected as too short/generic."""
+    """Normalize literal values; only empty values are invalid, regardless of length."""
     keep, rejected = [], []
     for v in values:
         v = " ".join(v.split())
-        (keep if len(v) >= MIN_VALUE_CHARS else rejected).append(v)
+        (keep if v else rejected).append(v)
     return list(dict.fromkeys(keep)), rejected
 
 

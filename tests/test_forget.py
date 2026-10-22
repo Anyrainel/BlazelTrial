@@ -178,11 +178,11 @@ def test_forgetting_a_version_keeps_the_chain_consistent():
     assert [v.ref for v in records.versions(A, v2.ref)] == [v2.ref]
 
 
-def test_short_or_generic_values_are_refused():
-    core.ingest("me", "A", "I live in Oregon, OR.", reply="ok")
-    report = forget_values("me", ["OR", "  ", "Ore"])
-    assert report.total() == 0 and len(report.rejected) == 3
-    assert store.thread_messages("A")  # nothing deleted
+def test_short_values_can_be_forgotten_but_empty_values_are_invalid():
+    core.ingest("me", "A", "My colleague is Xi.", reply="ok")
+    report = forget_values("me", ["Xi", "  "])
+    assert report.messages == 1 and report.rejected == [""]
+    assert all("Xi" not in m.text for m in store.thread_messages("A"))
 
 
 def test_forget_is_scoped_to_the_user():

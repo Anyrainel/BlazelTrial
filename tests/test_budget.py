@@ -74,6 +74,7 @@ def test_reported_usage_over_budget_raises_in_strict_mode(settings):
 
 
 def test_reported_over_budget_only_logged_when_not_strict(settings):
+    settings.budget_strict = False
     agent = Agent(build_model(settings, raw=reply_with_usage(9000)))
 
     assert agent.run_sync("hi").output == "ok"
@@ -221,7 +222,7 @@ def test_the_limit_is_exclusive(settings):
 
 
 def _fixed_counter(n: int):
-    async def count(messages, params):
+    async def count(messages, params, model_settings=None):
         return n
 
     return count
@@ -235,7 +236,7 @@ def test_tokenizer_count_is_used_and_falls_back_to_the_estimate(settings):
 
     from chatbot.agent.budget import BudgetedModel, CallLog
 
-    async def broken(messages, params):
+    async def broken(messages, params, model_settings=None):
         raise OSError("server down")
 
     def make(counter):
@@ -287,3 +288,80 @@ def test_an_exact_or_generous_count_leaves_the_scale_alone(settings):
     messages = [ModelRequest(parts=[UserPromptPart("hi")])]
     asyncio.run(model.request(messages, None, ModelRequestParameters()))
     assert model.scale["tokenizer"] == 1.05
+
+
+def test_count_failure_never_sends_inference_when_count_required(settings):
+    import asyncio
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    from chatbot.agent.budget import BudgetedModel, CallLog
+
+    async def unavailable(messages, params, model_settings=None):
+        raise OSError("count endpoint unavailable")
+
+    calls = []
+    model = BudgetedModel(
+        reply_with_usage(10, calls),
+        max_input_tokens=8000,
+        use_server_count=False,
+        chars_per_token=3,
+        strict=True,
+        counter=unavailable,
+        require_count=True,
+        log=CallLog(settings.llm_log_path),
+    )
+    with pytest.raises(RuntimeError, match="inference was not sent"):
+        asyncio.run(
+            model.request(
+                [ModelRequest(parts=[UserPromptPart("hello")])], None, ModelRequestParameters()
+            )
+        )
+    assert not calls
+
+
+def test_clipping_includes_marker_in_character_limit():
+    from chatbot.agent.shrink import clip_middle
+
+    for limit in (20, 400, 800, 1500, 24000):
+        text = "start " + "x" * (limit * 2) + " end"
+        clipped = clip_middle(text, limit)
+        assert len(clipped) <= limit
+        assert clip_middle(clipped, limit) == clipped
+
+
+def test_shrinking_at_8000_tokens_keeps_large_system_instructions(settings):
+    import asyncio
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    from chatbot.agent.budget import BudgetedModel, CallLog
+
+    counts = []
+
+    async def count(messages, params, model_settings):
+        n = (
+            sum(len(m.instructions or "") + sum(len(p.content) for p in m.parts) for m in messages)
+            // 3
+        )
+        counts.append(n)
+        return n
+
+    model = BudgetedModel(
+        reply_with_usage(10),
+        max_input_tokens=8000,
+        use_server_count=False,
+        chars_per_token=3,
+        strict=True,
+        counter=count,
+        require_count=True,
+        log=CallLog(settings.llm_log_path),
+    )
+    instructions = "s" * 21000
+    messages = [ModelRequest(parts=[UserPromptPart("x" * 12000)], instructions=instructions)]
+    sent, measured, original = asyncio.run(model.fit(messages, None, ModelRequestParameters()))
+    assert counts[0] > 8000 and counts[-1] < 8000 and measured.tokens < 8000
+    assert original > 8000 and sent[0].instructions == instructions
+    assert len(messages[0].parts[0].content) == 12000

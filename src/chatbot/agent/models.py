@@ -88,18 +88,20 @@ def build_model(settings: Settings, raw: Model | None = None) -> BudgetedModel:
     """Wrap the provider model with budget guard + call log. `raw` injects a test model."""
     if raw is None:
         settings = effective_settings(settings)
+    provider_model = raw or build_raw_model(settings)
     return BudgetedModel(
-        raw or build_raw_model(settings),
+        provider_model,
         max_input_tokens=settings.max_input_tokens,
         use_server_count=settings.uses_server_count,
-        counter=local_counter(settings.local_base_url)
-        if settings.count_method == "tokenize"
+        counter=local_counter(settings.local_base_url, provider_model)
+        if settings.count_method == "tokenize" and isinstance(provider_model, OpenAIChatModel)
         else None,
         counter_margin=settings.tokenizer_margin,
         chars_per_token=settings.estimate_chars_per_token,
         safety_factor=settings.estimate_safety_factor,
         strict=settings.budget_strict,
         log=CallLog(settings.llm_log_path),
+        require_count=raw is None,
     )
 
 

@@ -346,7 +346,7 @@ def erase(
     Configuration determines whether display-only original messages are retained.
 
     Args:
-        values: distinctive strings (at least 5 characters), e.g. "27 Larkspur Lane".
+        values: nonempty literal strings, including short names or identifiers.
         messages: refs (msg:N) of messages that discuss the thing without a distinctive string;
             the whole turn is deleted.
         many_ok: set only if the user asked to erase everything about a name or word that
@@ -365,7 +365,7 @@ def erase(
             accepted.append(value)
     ids = _own_message_ids(user_id, messages or [])
     if not accepted and not ids:
-        problems = [f"too short: {v!r}" for v in short] + generic
+        problems = ["empty value" for v in short] + generic
         return "Nothing erased. " + ("; ".join(problems) or "No values or messages given.")
     report = forgetting.forget_values(user_id, accepted, message_ids=ids, compact=False)
     deps.erased.extend(accepted)
@@ -383,7 +383,7 @@ def erase(
     deps.actions.append(f"erased: {done}")
     notes = []
     if short:
-        notes.append(f"too short, skipped: {len(short)}")
+        notes.append(f"empty values skipped: {len(short)}")
     if generic:
         notes.append("refused as too generic (use something more specific): " + "; ".join(generic))
     if left:
