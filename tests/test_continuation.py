@@ -4,7 +4,13 @@ document passages in memory search."""
 import json
 
 import pytest
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from chatbot import core
@@ -168,3 +174,32 @@ def test_opened_document_passages_are_searchable_from_that_session_only():
         for h in records.search_memory(MemoryCaller("me", "B"), "public launch date")
         if h.type == "passage"
     ]
+
+
+def test_tool_side_effects_survive_a_retried_turn(monkeypatch):
+    """A pre-flight refusal mid-turn restarts the run; what the first attempt's tools recorded
+    (here: values forgotten) must still drive the post-turn scrub."""
+    from chatbot.agent.budget import BudgetExceededError
+
+    core.ingest("me", "A", "My locker code is 55-81-23.", reply="ok")
+    attempts = 0
+
+    def fn(messages, info: AgentInfo) -> ModelResponse:
+        nonlocal attempts
+        done = any(
+            isinstance(p, ToolReturnPart)
+            for m in messages
+            if isinstance(m, ModelRequest)
+            for p in m.parts
+        )
+        if not done:
+            attempts += 1
+            if attempts == 1:
+                return ModelResponse(parts=[ToolCallPart("forget", {"values": ["55-81-23"]})])
+        if attempts == 1:  # first attempt: refused after its tool already ran
+            raise BudgetExceededError(9999, 8000, "preflight")
+        return ModelResponse(parts=[TextPart("Forgot 55-81-23.")])
+
+    with get_agent().override(model=build_model(get_settings(), raw=FunctionModel(fn))):
+        reply = core.send("me", "A", "Forget my locker code.")
+    assert attempts == 2 and "55-81-23" not in reply

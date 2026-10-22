@@ -100,10 +100,12 @@ def _window(thread_id: str, turn: int, scale: float) -> store.HistoryWindow:
 async def _reply(user_id: str, thread_id: str, user_msg) -> tuple[str, str, list[str]]:
     """Run the chat agent for a stored user message; returns (reply, run JSON, values the
     turn asked to forget)."""
-    deps = None
+    # Tool side effects recorded during the turn (values forgotten, a verbatim reply) must
+    # survive a retry: the first attempt's tools may already have run.
+    outputs: dict = {}
     for scale in _RETRY_SCALES:
         window = _window(thread_id, user_msg.turn, scale)
-        deps = ChatDeps(user_id, thread_id, current_msg_ref=refs.msg(user_msg.id))
+        deps = ChatDeps(user_id, thread_id, current_msg_ref=refs.msg(user_msg.id), outputs=outputs)
         try:
             with call_context(thread_id=thread_id, purpose="chat"):
                 result = await get_agent().run(

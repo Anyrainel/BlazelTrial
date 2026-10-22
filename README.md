@@ -162,9 +162,11 @@ and loaded upfront.
 from pydantic_ai import RunContext
 from chatbot.capabilities.registry import capability
 
+
 def weather(ctx: RunContext, city: str) -> str:
     """Current weather for a city (the docstring is the tool description the model sees)."""
     return "..."  # keep tool output bounded; never return unbounded text
+
 
 CAPABILITY = capability("weather", "Look up the weather.", __file__, weather)
 ```
