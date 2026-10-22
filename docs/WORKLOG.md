@@ -420,3 +420,19 @@ Validation: offline DM/channel receipt ordering and reaction-failure/filter test
 full pytest and ruff results recorded below. Live Slack scope grant/reaction has
 not been verified; no LLM scenario required for this adapter-only change.
 Result: 175 offline tests pass; ruff check and git diff --check pass.
+
+## Temporary Slack status replaces receipt emoji (2026-10-22 Pacific)
+
+User clarified the signal must be temporary. Removed the reaction callback and
+reactions:write setup requirement. Use assistant.threads.setStatus with chat:write
+(existing scope), setting is thinking while the turn runs and clearing explicitly
+in finally on success, failure or cancellation. Refresh every 60 seconds because
+Slack expires status after two minutes. Status failures never block answers.
+Lifecycle is inside the conversation lock: queued turns cannot clear another
+turn's indicator; delivered duplicate events do not set status. Existing DM and
+channel reply routing is preserved. Use the thread status API compatible with our
+current Bolt integration rather than expanding into Agent Sessions migration.
+Tests cover DM/channel parent routing, before-generation/after-post ordering,
+dedup, ignored events, API failure, cancellation and refresh. No live Slack UI
+verification or model scenario run; core/model behavior is unchanged.
+Validation result: 181 offline tests pass; scoped ruff and diff checks pass. Installed Slack SDK exposes assistant_threads_setStatus. Other ongoing working-tree changes were left untouched.

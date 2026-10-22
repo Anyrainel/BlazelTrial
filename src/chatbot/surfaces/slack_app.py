@@ -3,7 +3,8 @@
 import asyncio
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, suppress
 from weakref import WeakKeyDictionary
 
 from sqlmodel import col, select
@@ -93,7 +94,7 @@ async def handle_event(
     body: dict,
     bot_user_id: str,
     post: Callable[..., Awaitable],
-    react: Callable[..., Awaitable] | None = None,
+    set_status: Callable[..., Awaitable] | None = None,
     attempts: int = 1,
 ) -> None:
     """Persist generated output before posting; delivery retries reuse it after restarts.
@@ -107,30 +108,62 @@ async def handle_event(
     channel, ts = event.get("channel"), event.get("ts")
     if not channel or not ts:
         return  # real Slack events always supply these; no unsafe fallback dedup key
-    if react is not None:
-        try:
-            await react(channel=channel, timestamp=ts, name="eyes")
-        except Exception as exc:
-            # Duplicate events may already have our receipt. A cosmetic failure
-            # must never prevent generation or delivery of the actual answer.
-            response = getattr(exc, "response", None)
-            if response is None or response.get("error") != "already_reacted":
-                logger.warning("Slack receipt reaction failed: %s", exc)
     tid = conversation_id(event)
     key = ":".join((body.get("team_id", ""), channel, ts))
     locks = _locks.setdefault(asyncio.get_running_loop(), {})
     async with locks.setdefault(tid, asyncio.Lock()):
-        # Hold the conversation's place during retries too: a later event must
-        # not overtake a failed post while its original listener backs off.
-        for attempt in range(attempts):
-            try:
-                await _deliver_event(event, key=key, bot_user_id=bot_user_id, post=post)
-                return
-            except Exception:
-                logger.exception("Slack event failed (attempt %d/%d)", attempt + 1, attempts)
-                if attempt + 1 == attempts:
-                    raise
-                await asyncio.sleep(2**attempt)
+        with session() as s:
+            delivery = s.get(SlackDelivery, key)
+        if delivery is not None and delivery.delivered:
+            return
+        async with _working_status(event, set_status):
+            # Keep status and ordering through generation, posting and retries.
+            for attempt in range(attempts):
+                try:
+                    await _deliver_event(event, key=key, bot_user_id=bot_user_id, post=post)
+                    return
+                except Exception:
+                    logger.exception("Slack event failed (attempt %d/%d)", attempt + 1, attempts)
+                    if attempt + 1 == attempts:
+                        raise
+                    await asyncio.sleep(2**attempt)
+
+
+@asynccontextmanager
+async def _working_status(
+    event: dict, set_status: Callable[..., Awaitable] | None
+) -> AsyncIterator[None]:
+    """Refresh Slack's two-minute status until delivery; always attempt cleanup."""
+    if set_status is None:
+        yield
+        return
+
+    async def update(status: str) -> None:
+        try:
+            await set_status(
+                channel_id=event["channel"],
+                thread_ts=event.get("thread_ts") or event["ts"],
+                status=status,
+            )
+        except Exception:
+            logger.warning("Slack working status update failed", exc_info=True)
+
+    async def refresh() -> None:
+        while True:
+            await asyncio.sleep(60)
+            await update("is thinking…")
+
+    try:
+        await update("is thinking…")
+        task = asyncio.create_task(refresh())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+    finally:
+        await update("")
 
 
 async def _deliver_event(
@@ -200,7 +233,7 @@ def run() -> None:
                 body=body,
                 bot_user_id=context.bot_user_id,
                 post=client.chat_postMessage,
-                react=client.reactions_add,
+                set_status=client.assistant_threads_setStatus,
                 attempts=3,
             )
         except Exception:

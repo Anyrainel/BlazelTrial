@@ -53,32 +53,87 @@ def test_filters(extra):
 
 
 @pytest.mark.parametrize("is_dm", [False, True])
-def test_receipt_precedes_generation(is_dm, monkeypatch):
-    react = AsyncMock()
+@pytest.mark.parametrize("parent", [None, "0.001"])
+def test_status_precedes_generation_and_clears_after_post(is_dm, parent, monkeypatch):
+    status = AsyncMock()
     real = slack.send_async
-
-    async def generate(*args):
-        react.assert_awaited_once_with(channel=event["channel"], timestamp=event["ts"], name="eyes")
-        return await real(*args)
-
-    event = dict(BASE)
+    event = {**BASE, "thread_ts": parent}
     if is_dm:
         event.update(type="message", channel_type="im", channel="D1")
+    target = dict(channel_id=event["channel"], thread_ts=parent or event["ts"])
+
+    async def generate(*args):
+        status.assert_awaited_once_with(**target, status="is thinking…")
+        return await real(*args)
+
+    async def post(**kwargs):
+        assert status.await_count == 1
+
     monkeypatch.setattr(slack, "send_async", generate)
-    asyncio.run(slack.handle_event(event, body={}, bot_user_id=BOT, post=AsyncMock(), react=react))
 
-
-def test_receipt_failure_does_not_block_and_ignored_events_do_not_react():
     async def check():
-        react = AsyncMock(side_effect=RuntimeError("missing_scope"))
+        await slack.handle_event(event, body={}, bot_user_id=BOT, post=post, set_status=status)
+        assert status.await_count == 2
+        assert status.call_args.kwargs == {**target, "status": ""}
+        status.reset_mock()
+        await slack.handle_event(event, body={}, bot_user_id=BOT, post=post, set_status=status)
+        status.assert_not_awaited()  # delivered duplicate cannot disturb active status
+
+    asyncio.run(check())
+
+
+def test_status_failure_does_not_block_and_ignored_events_do_not_set_status():
+    async def check():
+        status = AsyncMock(side_effect=RuntimeError("Slack unavailable"))
         post = AsyncMock()
-        await slack.handle_event(BASE, body={}, bot_user_id=BOT, post=post, react=react)
+        await slack.handle_event(BASE, body={}, bot_user_id=BOT, post=post, set_status=status)
         post.assert_awaited_once()
-        react.reset_mock()
+        assert status.await_count == 2
+        status.reset_mock()
         await slack.handle_event(
-            {**BASE, "bot_id": "B1"}, body={}, bot_user_id=BOT, post=post, react=react
+            {**BASE, "bot_id": "B1"}, body={}, bot_user_id=BOT, post=post, set_status=status
         )
-        react.assert_not_awaited()
+        status.assert_not_awaited()
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("failure", ["generate", "post", "cancel"])
+def test_status_clears_on_failure_or_cancellation(failure, monkeypatch):
+    status = AsyncMock()
+    post = AsyncMock()
+    error = asyncio.CancelledError if failure == "cancel" else RuntimeError
+    if failure == "post":
+        post.side_effect = error("failed")
+    else:
+        monkeypatch.setattr(slack, "send_async", AsyncMock(side_effect=error("failed")))
+    with pytest.raises(error):
+        asyncio.run(
+            slack.handle_event(BASE, body={}, bot_user_id=BOT, post=post, set_status=status)
+        )
+    assert [call.kwargs["status"] for call in status.await_args_list] == ["is thinking…", ""]
+
+
+def test_status_refreshes_during_long_request(monkeypatch):
+    async def check():
+        refreshed = asyncio.Event()
+        calls = []
+
+        async def status(**kwargs):
+            calls.append(kwargs["status"])
+            if len(calls) == 2:
+                refreshed.set()
+
+        real_sleep = asyncio.sleep
+
+        async def sleep(delay):
+            assert delay == 60
+            await real_sleep(0)
+
+        monkeypatch.setattr(slack.asyncio, "sleep", sleep)
+        async with slack._working_status(BASE, status):
+            await refreshed.wait()
+        assert calls == ["is thinking…", "is thinking…", ""]
 
     asyncio.run(check())
 
