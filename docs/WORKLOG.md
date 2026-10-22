@@ -32,7 +32,7 @@ conversations.info denied missing_scope (channels:read absent); membership verif
 #dmagent. Full live evidence and remaining limits: SLACK_EVALUATION.md, channel
 mentions section. Channel -> second channel/DM/main recall, draft isolation,
 thread routing, rapid request ordering, common Slack formatting, cross-surface
-forget and post-forget non-revival PASS. 69 model calls, max input 4,429, no
+forget and post-forget non-revival PASS. 70 model calls including final restart smoke check, max input 4,429, no
 violations or refusals. Added retry-backoff ordering regression after inspection
 found the first listener loop released the lock between attempts; retries now
 hold their conversation's place. Synthetic fact deleted through core; no local
@@ -42,6 +42,17 @@ Concurrent unrelated agent/shrink.py and agent/token_count.py appeared during
 validation. Preserved them. Repository-wide ruff had passed before they appeared;
 a later global run flags long lines in unrelated untracked shrink.py. Checks on
 this feature's changed Python files pass. No unrelated files were staged.
+
+Final reviewed snapshot 2014ed5: 141 tests PASS (25.72 s); Ruff checks and format
+verification PASS across tracked Python directories (67 files). Repeated current
+checkout tests were interrupted when concurrent budget work changed their code;
+reviewed source was exported to an isolated directory for a reproducible run.
+Runner mistake caught: the first archive run still imported the editable install;
+fixed with explicit PYTHONPATH and verified module path. The bot now runs reviewed
+source from .state/runtime/slack-2014ed5 with the original repo config/state root;
+no secrets copied or settings changed. Final real #test mention returned exact
+FINAL-MENTIONS-964 in its own thread in 2.7 s. Independent crash/exhausted retry,
+progress feedback and post-forget latency limitations are explicitly documented.
 
 ## Cross-conversation Slack evaluation follow-up (2026-10-21 Pacific)
 

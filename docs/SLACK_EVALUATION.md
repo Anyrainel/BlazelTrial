@@ -237,7 +237,27 @@ with the implementation; prior provider settings and user data were preserved.
 | Common Markdown conversion | PASS — SLOW answer has Slack bold `*...*`, table rows separated by bullets, and a native labelled link. Verified actual posted payload via Slack API. |
 | Main-chat forget -> old draft thread | PASS — [post-forget answer](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653314728789?thread_ts=1792653007.161019) reported the codename unavailable, without reviving LOCAL-DRAFT-964 or writing another announcement. A neutral completion marker replaced the deleted assistant draft locally. |
 | Hard local deletion | PASS — case-insensitive DB/WAL byte search found no full synthetic codename after forgetting. Slack-hosted messages are intentionally retained. |
-| Budget | PASS — 69 sent model calls during 07:10:07–07:15:15 UTC across the four QA conversations, max provider input 4,429, zero violations and zero pre-flight refusals. Logs include chat, memory search and maintenance. |
+| Budget | PASS — 70 sent model calls across the four QA conversations (including the final restart smoke check), max provider input 4,429, zero violations and zero pre-flight refusals. Logs include chat, memory search and maintenance. |
+
+### Final reviewed build and runtime
+
+Git snapshot **2014ed5** passed **141 offline tests in 25.72 s**, plus Ruff check
+and format verification over all tracked Python directories (67 files). This
+isolated check pins the Slack implementation while unrelated budget/frontend
+edits proceed in the shared checkout. Initial full check before those edits was
+140/140; the extra test verifies ordering during post retry backoff. The first
+isolated runner accidentally resolved the editable installation; corrected by
+setting PYTHONPATH explicitly and verifying the imported module path before tests.
+
+The final worker runs the reviewed source at
+`.state/runtime/slack-2014ed5/run_reviewed_slack.py`, with configuration/state paths
+bound to the actual repository (`.env` unchanged, existing `.state/state.db`).
+This avoids loading unreviewed concurrent budget changes into the live worker.
+After that restart, [final real mention](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653729535529)
+received the exact [FINAL-MENTIONS-964 reply](https://blazeltrial.slack.com/archives/C0CB55JKB7Y/p1792653732190559)
+in its own thread, about 2.7 seconds later. The worker is left connected. A later
+normal `uv run chatbot slack` restart uses the then-current working checkout;
+stop the snapshot worker first to retain the single-worker assumption.
 
 ### Offline guarantees and remaining limits
 

@@ -42,7 +42,7 @@ Full working log (assumptions, every AI mistake caught, measurements, time log):
   runner's accounting, not a fresh run. 167 sent calls; max 6,937 input tokens; 0 over; 1
   request refused at pre-flight and retried smaller.
 
-140 offline tests; the key guarantees are mutation-checked.
+141 offline tests; the key guarantees are mutation-checked.
 
 ## What doesn't work / not done
 - A single user message larger than the budget fails after the retries (no chunking of
