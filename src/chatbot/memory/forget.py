@@ -14,7 +14,7 @@ Deterministic and user-wide (every session), serialized with all other memory wr
   value are deleted;
 - FTS indexes are optimized, the WAL is truncated and the database is VACUUMed, so the bytes
   are gone from disk too.
-The values themselves are never stored anywhere.
+No separate list of forgotten values is persisted.
 """
 
 import json

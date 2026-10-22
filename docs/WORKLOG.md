@@ -25,6 +25,12 @@ Live Bonsai soft-forget smoke: remembered a synthetic address, forgot it, then c
 recall it; original text remained in HTTP history and active search had no hit. 14 model
 calls, maximum 2,926 input tokens, zero violations. Restarted the dev API in soft mode;
 Vite-proxied health check passes at http://127.0.0.1:5173.
+Hard-mode live scenario 6 also PASS on 120 ingested turns: address absent from replies,
+outbound calls and database bytes; 13 calls, max input 4,356, zero violations/refusals.
+Used `SUMMARY_KEEP_RECENT_TURNS=1000` and hash embeddings to isolate forget; interrupted
+an earlier run that was spending time generating long Bonsai episode notes. Note invalidation
+is covered by the offline hard-delete regressions. Feature commit: 8bf827c; earlier user edits
+to frontend, system prompt and unrelated README sections were preserved and left unstaged.
 
 ## Budget resilience and the memory worker (2026-10-22)
 
