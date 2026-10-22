@@ -11,6 +11,7 @@ import {
 import * as api from "./api";
 import { AGENT_NAME, Brand } from "./Brand";
 import { Login, loadSession, saveSession } from "./Login";
+import { Memory } from "./Memory";
 
 const toThreadMessage = (m: api.Msg, i: number): ThreadMessageLike => ({
   id: `${i}`,
@@ -104,6 +105,7 @@ function Chat({ threadId, onSent }: { threadId: string; onSent: () => void }) {
 }
 
 function Workspace({ onLogout }: { onLogout: () => void }) {
+  const [view, setView] = useState<"chat" | "memory">("chat");
   const [threads, setThreads] = useState<api.Thread[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
 
@@ -113,7 +115,10 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
   useEffect(refresh, [refresh]);
 
-  const startNew = useCallback(async () => setCurrent((await api.newThread()).id), []);
+  const startNew = useCallback(async () => {
+    setCurrent((await api.newThread()).id);
+    setView("chat");
+  }, []);
 
   useEffect(() => {
     if (current === null) void startNew();
@@ -128,6 +133,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     <div className="app">
       <aside className="sidebar">
         <Brand />
+        <button className="new-chat" aria-pressed={view === "memory"} onClick={() => setView("memory")}>Memory &amp; artifacts</button>
         <button className="new-chat" onClick={startNew}>
           + New chat
         </button>
@@ -136,7 +142,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             <button
               key={t.id}
               className={`thread-link${t.id === current ? " active" : ""}`}
-              onClick={() => setCurrent(t.id)}
+              onClick={() => { setCurrent(t.id); setView("chat"); }}
               title={t.title}
             >
               <span className="thread-kind">{t.kind === "slack" ? "Slack" : "Chat"}</span>
@@ -152,7 +158,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         </div>
       </aside>
       <main className="main">
-        {current && <Chat key={current} threadId={current} onSent={refresh} />}
+        {view === "memory" ? <Memory /> : current && <Chat key={current} threadId={current} onSent={refresh} />}
       </main>
     </div>
   );

@@ -18,3 +18,16 @@ export const send = (threadId: string, text: string) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ thread_id: threadId, text }),
   }).then(json<{ reply: string }>);
+
+export type Inventory = {
+  system_instructions: string;
+  categories: { id: string; label: string; count: number }[];
+  files: string[];
+  capabilities: { name: string; description: string; instructions: string }[];
+};
+export type Artifact = Record<string, string | number | boolean | null>;
+export type ArtifactPage = { items: Artifact[]; total: number; offset: number; limit: number };
+export const inventory = () => fetch("/agent/inventory").then(json<Inventory>);
+export const artifacts = (category: string, q: string, offset: number) =>
+  fetch(`/agent/inventory/${encodeURIComponent(category)}?${new URLSearchParams({ q, offset: String(offset) })}`)
+    .then(json<ArtifactPage>);

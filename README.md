@@ -169,8 +169,10 @@ uv run python scripts/eval_retrieval.py
 ## How it works (short)
 
 - **Budget guard** (`agent/budget.py`): every model is wrapped. Each request is counted before
-  sending (provider count endpoint; the local llama.cpp server's own tokenizer; else a
-  conservative estimate). One that is not below `MAX_INPUT_TOKENS` is shrunk (`agent/shrink.py`)
+  sending (Claude/Meta provider count endpoint; the local llama.cpp server's own template and
+  tokenizer using the inference adapter's serialized payload). If counting fails, live
+  inference is not sent. Estimates are only used to plan shrinking and in offline tests.
+  One that is not below `MAX_INPUT_TOKENS` is shrunk (`agent/shrink.py`)
   and re-counted instead of failing; the reported usage is logged, and a low count raises the
   safety scale.
 - **Context**: static instructions (system prompt + capability instructions) and a bounded
@@ -234,3 +236,20 @@ uv run chatbot capabilities
 ```
 
 Hard output rules belong in code, not prompts: see `capabilities/linkedin/validator.py`.
+
+## Inspect memory and artifacts
+
+Open **Memory & artifacts** in the web sidebar to browse and search current/previous
+memory records, their sources, conversation notes, document notes/passages and opened
+documents, saved tool outputs, task checkpoints, mock messages, Slack delivery receipts
+and legacy stores. Counts, pagination and refresh are available. Document filenames and
+capability instructions are also visible. This is a read-only owner view across sessions;
+it does not broaden the agent's own memory access. Forgotten chat text remains visible
+in conversation history in soft mode; deleted derived memory is absent from this view.
+
+Read-only APIs: `GET /agent/inventory`, `GET /agent/inventory/{category}?q=&offset=&limit=`.
+`GET /agent/status` exposes budget/forget policy and documented delivery limitations for
+programmatic queries. No delivery failure notification UI has been added. API keys and
+runtime credentials are never included in these responses. Restart the API after pulling.
+The artifact browser also shows system instructions and the last 500 usage-log entries
+(filtered to the owner, with only usage fields exposed).

@@ -436,3 +436,33 @@ Tests cover DM/channel parent routing, before-generation/after-post ordering,
 dedup, ignored events, API failure, cancellation and refresh. No live Slack UI
 verification or model scenario run; core/model behavior is unchanged.
 Validation result: 181 offline tests pass; scoped ruff and diff checks pass. Installed Slack SDK exposes assistant_threads_setStatus. Other ongoing working-tree changes were left untouched.
+
+## Scope-review follow-up and artifact browser (2026-10-22 Pacific)
+
+User clarified that token APIs must count before inference, short remembered values must
+also be forgettable, delivery limits should be queryable without new failure notifications,
+and tangible agent state should be visible in a memory UI. Left Bonsai configured; no model
+switch. Existing core per-conversation locks and shrink no-progress guards were already
+present when work resumed, so they were not reimplemented. Corrected clip_middle to include
+the marker in its character limit (the 800-char floor is separate from the 8k-token cap).
+Live model factories now require successful counting; no estimate fallback to inference.
+Local counting reuses PydanticAI inference serialization rather than a parallel approximate
+converter. Removed the forget-only five-character gate, retaining empty-value rejection.
+
+Added read-only owner-scoped inventory with SQL search/pagination, Memory & artifacts view,
+source/version metadata, persisted working artifacts, document catalog and capability
+instructions. /agent/status makes delivery limitations queryable; no notification UI.
+During browser QA, simultaneous first HTTP requests exposed an existing schema-init race:
+both attempted to add Message.forgotten. Serialized migration check+ALTER with BEGIN IMMEDIATE.
+AI mistake caught: initial dev preview returned HTML because the Vite /agent proxy was missing;
+added it, then restarted the stale API so the new routes were available.
+
+Verification so far: 185 offline tests passed; ruff and frontend build passed (existing bundle
+size warning). Live Bonsai scenario 1 PASS: 16 calls, max 2,575 input tokens, no violations or
+preflight refusals. Fresh isolated state .state/review-memory-ui-20261022. Final checks follow.
+Final follow-up: 187 offline tests passed in 28.97s, ruff and production frontend build pass.
+Targeted inventory regressions also cover malformed log lines, usage-field allowlisting and
+excluding other owners' model calls. Browser QA verified real records and category counts;
+preview saved to .state/logs/memory-artifacts-ui.png. The UI also exposes the system prompt
+and last 500 usage-log entries, without credentials. Remaining delivery/crash limitations
+are explicit at /agent/status. No claim of cross-process locking or exactly-once Slack delivery.

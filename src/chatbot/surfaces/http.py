@@ -19,6 +19,7 @@ from chatbot.core import SLACK_THREAD_ID, send_async
 from chatbot.memory import messages as store
 from chatbot.memory.db import session
 from chatbot.memory.models import Message, Thread
+from chatbot.surfaces.inventory import router as inventory_router
 
 WEB_DIST = REPO_ROOT / "web" / "dist"
 
@@ -49,6 +50,7 @@ class MessageOut(BaseModel):
 
 
 app = FastAPI(title="chatbot", version="0.1.0")
+app.include_router(inventory_router)
 
 
 @app.post("/send", response_model=SendOut)
