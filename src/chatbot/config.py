@@ -18,6 +18,10 @@ class Settings(BaseSettings):
 
     llm_provider: Provider = "local"
     llm_model: str = "bonsai-2-27b"
+    # Used instead when LLM_PROVIDER=local but the local server can't be reached or started
+    # (decided once per process). "none" = fail instead.
+    llm_fallback_provider: Provider | Literal["none"] = "anthropic"
+    llm_fallback_model: str = "claude-sonnet-5-5"
 
     anthropic_api_key: SecretStr | None = None
     meta_api_key: SecretStr | None = None

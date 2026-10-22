@@ -24,7 +24,9 @@ cp .env.example .env
 Then edit `.env`:
 - Default: `LLM_PROVIDER=local`, `LLM_MODEL=bonsai-2-27b`, with `LOCAL_SERVER_BIN` (PrismML's
   llama.cpp fork) and `LOCAL_MODEL_PATH` (Bonsai 2 GGUF). The server on `LOCAL_BASE_URL` starts
-  on first use if it is not running (`uv run chatbot local-server start|stop|status`); or
+  on first use if it is not running (`uv run chatbot local-server start|stop|status`). If it
+  can't be reached or started, the stack uses `LLM_FALLBACK_PROVIDER`/`LLM_FALLBACK_MODEL`
+  (default `anthropic`/`claude-sonnet-5-5`, needs `ANTHROPIC_API_KEY`; `none` to fail); or
   `LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-sonnet-5-5` and `ANTHROPIC_API_KEY`; or
   `LLM_PROVIDER=meta`, `LLM_MODEL=muse-spark-1.3-contributor` and `META_API_KEY`.
 - `MAX_INPUT_TOKENS` sets the per-call input budget (default 8000).

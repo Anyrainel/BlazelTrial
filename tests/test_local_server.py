@@ -8,8 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from chatbot.agent import local_server
-from chatbot.agent.models import build_raw_model
+from chatbot.agent import local_server, models
 from chatbot.config import Settings
 
 
@@ -98,12 +97,43 @@ def test_command_serves_llm_model_name(tmp_path):
     assert cmd[cmd.index("--port") + 1] == "1234"
 
 
-def test_model_factory_autostarts_only_when_enabled(tmp_path, monkeypatch):
+@pytest.fixture
+def fresh_verdict(monkeypatch):
+    monkeypatch.setattr(models, "_local_unavailable", {})
+
+
+def test_factory_autostarts_local_when_enabled(tmp_path, monkeypatch, fresh_verdict):
     calls = []
     monkeypatch.setattr(local_server, "ensure_running", lambda s: calls.append(s))
-    build_raw_model(_settings(tmp_path, 1))
-    build_raw_model(_settings(tmp_path, 1, local_autostart=False))
+    assert models.effective_settings(_settings(tmp_path, 1)).llm_provider == "local"
     assert len(calls) == 1
+    models.effective_settings(_settings(tmp_path, 1))  # verdict cached: no second check
+    assert len(calls) == 1
+
+
+def _broken(settings):
+    raise TimeoutError("not healthy")
+
+
+def test_unavailable_local_falls_back(tmp_path, monkeypatch, fresh_verdict):
+    monkeypatch.setattr(local_server, "ensure_running", _broken)
+    settings = _settings(
+        tmp_path, 1, llm_fallback_provider="anthropic", llm_fallback_model="claude-x"
+    )
+    chosen = models.effective_settings(settings)
+    assert (chosen.llm_provider, chosen.llm_model) == ("anthropic", "claude-x")
+    assert chosen.uses_server_count  # budget pre-flight follows the model actually used
+
+
+def test_no_autostart_and_nothing_running_falls_back(tmp_path, fresh_verdict):
+    settings = _settings(tmp_path, _free_port(), local_autostart=False)
+    assert models.effective_settings(settings).llm_provider == "anthropic"
+
+
+def test_fallback_none_raises(tmp_path, monkeypatch, fresh_verdict):
+    monkeypatch.setattr(local_server, "ensure_running", _broken)
+    with pytest.raises(RuntimeError, match="LLM_FALLBACK_PROVIDER=none"):
+        models.effective_settings(_settings(tmp_path, 1, llm_fallback_provider="none"))
 
 
 def test_stop_ignores_stale_pid(tmp_path, monkeypatch):
