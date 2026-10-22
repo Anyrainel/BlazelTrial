@@ -2,6 +2,35 @@
 
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
+## Authorized channel mentions implementation (2026-10-22 Pacific)
+
+User explicitly expanded the original DM-only scope: one core conversation per
+Slack channel (`slack-` + channel ID), retaining endless `slack-dm`. Working tree
+was clean before edits. Policy: channel replies under the mentioned message (or
+existing Slack parent); every channel follow-up requires a mention. All channel
+members allowed by SLACK_ALLOWED_USER map to the same single-user identity.
+
+Fixed post-forget fulfilled-request replay: replace deleted assistant replies
+with a neutral completion boundary when the user request survives; no forgotten
+content is retained. Regression verifies history shape and disk deletion. New
+regression also exposed lazy vector-table creation deadlocking inside forget's
+write transaction on unindexed messages; deletion now visits existing vector
+indexes on the same connection, including historical embedding dimensions.
+
+Implementation in progress: durable reply-reference delivery receipts (no extra
+personal text), per-conversation generation/delivery serialization, bounded
+listener retries, explicit event filters and mention normalization, conservative
+Slack mrkdwn rendering. Initial targeted run: 31 tests pass. Test authoring
+mistake caught: record APIs return RecordView.ref and reject invisible sources
+with ValueError, rather than returning None; corrected assertions.
+
+Verified current Slack app A0CADLS4P0D via settings UI: Socket Mode enabled,
+bot events app_home_opened, app_mention, message.channels, message.groups,
+message.im. auth.test response confirms granted app_mentions:read, chat:write,
+im:history, im:read among other scopes. No settings changes/reinstall required.
+conversations.info denied missing_scope (channels:read absent); membership will
+be verified through visible Slack UI or history rather than inferred.
+
 ## Cross-conversation Slack evaluation follow-up (2026-10-21 Pacific)
 
 Extended [SLACK_EVALUATION.md](SLACK_EVALUATION.md) with existing-session recall,

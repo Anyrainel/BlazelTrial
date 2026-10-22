@@ -183,3 +183,26 @@ def test_forget_is_scoped_to_the_user():
     assert [m.text for m in store.thread_messages("Z")][0].startswith("Theirs")
     with session() as s:
         assert s.exec(MemoryRecord.__table__.select()).all() == []
+
+
+def test_forget_keeps_fulfilled_draft_completed_in_replay():
+    from pydantic_ai.messages import ModelRequest, ModelResponse
+
+    from chatbot.memory.models import Role
+
+    store.ensure_thread("me", "slack-CONE")
+    store.record_turn(
+        "me",
+        "slack-CONE",
+        "For this draft only use LOCAL-ONE",
+        "LOCAL-ONE: Cobalt Finch launches today",
+    )
+    forget_values("me", ["Cobalt Finch"])
+    rows = store.thread_messages("slack-CONE")
+    assert [r.role for r in rows] == [Role.USER, Role.ASSISTANT]
+    history = store._turn_messages(rows)
+    assert isinstance(history[0], ModelRequest)
+    assert isinstance(history[1], ModelResponse)
+    assert "completed" in history[1].parts[0].content
+    assert all("Cobalt Finch" not in r.text for r in rows)
+    assert not on_disk("Cobalt Finch")

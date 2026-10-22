@@ -30,6 +30,8 @@ from chatbot.memory.models import (
     NoteSource,
     OutboundMessage,
     RecordSource,
+    Role,
+    SlackDelivery,
     Summary,
     ToolOutput,
 )
@@ -103,6 +105,30 @@ def forget_values(user_id: str, values: list[str], *, compact: bool = True) -> F
         msgs = s.exec(select(Message).where(Message.user_id == user_id)).all()
         gone_msgs = [m for m in msgs if matches(m.text)]
         gone_ids = {m.id for m in gone_msgs}
+        for delivery in s.exec(
+            select(SlackDelivery).where(col(SlackDelivery.reply_message_id).in_(gone_ids))
+        ).all():
+            delivery.reply_message_id = None
+            delivery.delivered = True
+            s.add(delivery)
+        # Keep a safe completion boundary when deleting a fulfilled reply. Otherwise
+        # the surviving request replays as unfinished work (including draft-only rules).
+        surviving_users = {
+            (m.thread_id, m.turn) for m in msgs if m.role == Role.USER and m.id not in gone_ids
+        }
+        for m in gone_msgs:
+            if m.role == Role.ASSISTANT and (m.thread_id, m.turn) in surviving_users:
+                s.add(
+                    Message(
+                        thread_id=m.thread_id,
+                        user_id=m.user_id,
+                        turn=m.turn,
+                        role=Role.ASSISTANT,
+                        source=m.source,
+                        text="[This request was completed. Its reply was removed by forgetting.]",
+                        created_at=m.created_at,
+                    )
+                )
         for m in msgs:
             if m.id in gone_ids:
                 s.delete(m)

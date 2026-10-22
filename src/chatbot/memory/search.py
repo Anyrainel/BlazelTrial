@@ -413,10 +413,19 @@ def repair_once(engine: Engine) -> dict[str, int]:
 
 def delete_index_rows(conn, *, messages: set[int], records: set[int], notes: set[int]) -> None:
     """Remove index rows of deleted items on the caller's open transaction (used by forget)."""
-    vec_table = _ensure_vec(_engine(), get_embedder().dim)
+    # Do not create a virtual table on another connection while forget holds a
+    # write transaction. Purge every existing dimension (including old backends).
+    vec_tables = [
+        name
+        for (name,) in conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'message_vec_%'"
+        )
+        if re.fullmatch(r"message_vec_\d+", name)
+    ]
     for mid in messages:
         conn.exec_driver_sql("DELETE FROM message_fts WHERE rowid = ?", (mid,))
-        conn.exec_driver_sql(f"DELETE FROM {vec_table} WHERE rowid = ?", (mid,))
+        for vec_table in vec_tables:
+            conn.exec_driver_sql(f"DELETE FROM {vec_table} WHERE rowid = ?", (mid,))
     for rid in records:
         conn.exec_driver_sql("DELETE FROM record_fts WHERE rowid = ?", (rid,))
     for nid in notes:
