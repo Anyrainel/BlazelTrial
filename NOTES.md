@@ -25,7 +25,8 @@ Full working log (assumptions, every AI mistake caught, measurements, time log):
   verbatim.
 
 ## Trade-offs
-- Tool-first recall costs calls: about 4 subagent requests per chat request. Prompt caching
+- Tool-first recall costs calls: ~2.6 subagent requests per chat request (was ~4.3 before the
+  answer-early rule). Prompt caching
   cuts subagent input by 80% in reads, but latency is higher than injection would be.
 - Lexical BM25 by default: notes and vectors added no recall on a 14-question paraphrase eval
   (12/14 each). Paraphrase gaps rely on the subagent rewording queries.
@@ -47,8 +48,6 @@ Full working log (assumptions, every AI mistake caught, measurements, time log):
 - A single user message larger than the budget fails after the retries (no chunking of
   pasted text).
 - First `fetch_doc` of a big document takes ~95 s (map-reduce, 15+ calls).
-- The bot sometimes doesn't look memory up before saying it lacks something (e.g. the
-  partner's name after a forget).
 - The local estimate undercounted Claude by up to ~23% on tool-heavy turns. The guard holds,
   but the estimator isn't tuned.
 - No schema migrations: delete `.state/` after pulling. Slack: one DM thread, no

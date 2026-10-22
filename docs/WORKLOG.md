@@ -179,6 +179,14 @@ look up the partner's name before asking; subagent prompt now rewords before not
 - W20. Claude Code disabled prompt caching for the memory subagent ("every prompt is unique"),
   but each step of one question resends the previous steps: 604k uncached input tokens in a
   full run. Caught in the run's per-purpose cost breakdown; with caching, 80% are cache reads.
+- W21. After the generic rewording rule, live S6 regressed: the search subagent found the
+  address within 2-3 searches but kept verifying until its 6-request limit and returned no
+  answer, so nothing was forgotten. Caught by the S1/S4/S6 re-run; traced by replaying the
+  subagent's steps. Fixes: answer-early rule, tools stop at the last request, evidence kept on
+  limit. Re-run: S1/S4/S6 PASS, subagent requests per chat request 4.2 -> 2.6.
+- W22. A retried turn (pre-flight refusal) rebuilt the run deps and dropped what the first
+  attempt's tools recorded (values forgotten), so the reply wasn't scrubbed. Surfaced by
+  test_forget once the system prompt grew; outputs are now shared across retries.
 
 ## Rejected AI suggestions
 - (none yet)
@@ -200,4 +208,5 @@ look up the partner's name before asking; subagent prompt now rewords before not
 | 2026-10-21 | | Memory refactor step 3: ask_memory subagent, write tools, injection/extraction removed; S1/S4/S5 live |
 | 2026-10-21 | | Memory refactor step 4: doc passages in search, in-run compaction + checkpoints, mutation keys, recovery tests |
 | 2026-10-21 | | Step 5: forget sweep + tool + disk purge (S6 live PASS); step 6 started: scenario runner, retrieval eval |
+| 2026-10-22 | | Prompt fixes (memory before "don't know"), subagent answer-early + last-step guard, retry outputs fix; S1/S4/S6 re-run PASS |
 | 2026-10-22 | | Step 6: full runs - Claude 7/7 twice, Meta 7/7 (log re-scored); subagent caching; step 7: HTTP, Slack (connects), web UI, README, NOTES |
