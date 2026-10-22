@@ -47,10 +47,20 @@ class SearchDeps:
     caller: MemoryCaller
     store: str
     chars_left: int
+    max_requests: int = 6
     seen: set[str] = field(default_factory=set)
+    evidence: dict[str, str] = field(default_factory=dict)  # ref -> line, first seen first
+
+    def last_step(self, ctx: RunContext) -> str | None:
+        """When only the answering request is left, tools stop returning results."""
+        if ctx.usage.requests >= self.max_requests - 1:
+            return (
+                "Step budget used up. Answer now with what you have (status incomplete if needed)."
+            )
+        return None
 
     def spend(self, text: str) -> str:
-        """Charge a tool result to the budget; record refs it shows."""
+        """Charge a tool result to the budget; record refs (and their lines) it shows."""
         if self.chars_left <= 0:
             return (
                 "Tool budget used up. Answer now with what you have (status incomplete if needed)."
@@ -58,6 +68,10 @@ class SearchDeps:
         text = text[: self.chars_left]
         self.chars_left -= len(text)
         self.seen.update(re.findall(_REF_PATTERN, text))
+        for line in text.splitlines():
+            m = re.match(_REF_PATTERN, line.strip())
+            if m and m.group(0) not in self.evidence:
+                self.evidence[m.group(0)] = line.strip()
         return text
 
 
@@ -114,6 +128,8 @@ def get_search_agent() -> Agent[SearchDeps, MemoryAnswer]:
     @agent.tool
     def search(ctx: RunContext[SearchDeps], query: str, k: int = 5) -> str:
         """Keyword (BM25) search over memory records, this conversation's messages and notes."""
+        if stop := ctx.deps.last_step(ctx):
+            return stop
         try:
             hits = records.search_memory(ctx.deps.caller, query, store=ctx.deps.store, k=k)
         except MemoryAccessError as exc:
@@ -123,6 +139,8 @@ def get_search_agent() -> Agent[SearchDeps, MemoryAnswer]:
     @agent.tool
     def read(ctx: RunContext[SearchDeps], ref: str) -> str:
         """Read one record, message, note or passage by ref."""
+        if stop := ctx.deps.last_step(ctx):
+            return stop
         try:
             return ctx.deps.spend(format_item(records.read(ctx.deps.caller, ref)))
         except MemoryAccessError as exc:
@@ -131,6 +149,8 @@ def get_search_agent() -> Agent[SearchDeps, MemoryAnswer]:
     @agent.tool
     def expand(ctx: RunContext[SearchDeps], ref: str, before: int = 2, after: int = 2) -> str:
         """Messages around a message ref in the same conversation (max 5 each side)."""
+        if stop := ctx.deps.last_step(ctx):
+            return stop
         try:
             views = records.expand(ctx.deps.caller, ref, before=before, after=after)
         except MemoryAccessError as exc:
@@ -140,6 +160,8 @@ def get_search_agent() -> Agent[SearchDeps, MemoryAnswer]:
     @agent.tool
     def versions(ctx: RunContext[SearchDeps], ref: str) -> str:
         """All versions of a memory record, oldest first, with dates."""
+        if stop := ctx.deps.last_step(ctx):
+            return stop
         try:
             chain = records.versions(ctx.deps.caller, ref)
         except MemoryAccessError as exc:
@@ -171,7 +193,9 @@ async def ask(caller: MemoryCaller, question: str, store: str = "both") -> Memor
     settings = get_settings()
     if store not in ("session", "long_term", "both"):
         store = "both"
-    deps = SearchDeps(caller, store, settings.memory_search_tool_chars)
+    deps = SearchDeps(
+        caller, store, settings.memory_search_tool_chars, settings.memory_search_max_requests
+    )
     try:
         with call_context(purpose="memory_search"):
             result = await get_search_agent().run(
@@ -182,10 +206,12 @@ async def ask(caller: MemoryCaller, question: str, store: str = "both") -> Memor
         answer = result.output
     except UsageLimitExceeded:
         logger.info("memory search hit its step limit")
+        closest = list(deps.evidence.items())[:3]
         answer = MemoryAnswer(
             status="incomplete",
-            answer="The memory search ran out of steps before reaching an answer.",
-            caveats="Ask a narrower question or search again.",
+            answer="The memory search ran out of steps; the closest evidence it saw is listed.",
+            sources=[MemorySource(ref=ref, excerpt=line) for ref, line in closest],
+            caveats="Unverified: read the sources, or ask a narrower question.",
         )
     final = _finalize(answer, deps.seen, settings.memory_answer_chars)
     logger.info(

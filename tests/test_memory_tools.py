@@ -220,3 +220,17 @@ def test_stored_run_replays_tool_exchanges_without_instructions():
         if isinstance(p, ToolReturnPart)
     ]
     assert returns and "Saved rec:" in str(returns[0].content)
+
+
+def test_last_step_stops_tools_and_limit_returns_closest_evidence(monkeypatch):
+    monkeypatch.setenv("MEMORY_SEARCH_MAX_REQUESTS", "4")
+    get_settings.cache_clear()
+    core.ingest("me", "A", "We finally moved! New place is on Birch Road.", reply="ok")
+    seen: list[str] = []
+    endless = [("search", {"query": "moved"})] * 10  # never answers on its own
+    with search_agent_answering({"status": "found", "answer": "x"}, steps=endless, seen=seen):
+        answer = core._run_sync(subagent.ask(A, "Where does the user live?"))
+    assert seen[0].startswith("msg:")  # real results while steps remain
+    assert seen[-1].startswith("Step budget used up")  # the last request gets no new results
+    assert answer.status == "incomplete"
+    assert answer.sources and "Birch Road" in answer.sources[0].excerpt  # closest evidence kept
