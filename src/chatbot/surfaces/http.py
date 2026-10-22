@@ -18,7 +18,7 @@ from chatbot.config import REPO_ROOT, get_settings
 from chatbot.core import SLACK_THREAD_ID, send_async
 from chatbot.memory import messages as store
 from chatbot.memory.db import session
-from chatbot.memory.models import Message, Thread
+from chatbot.memory.models import ForgottenMessage, Message, Thread
 
 WEB_DIST = REPO_ROOT / "web" / "dist"
 
@@ -92,8 +92,21 @@ def thread_messages(thread_id: str, limit: int = 100) -> list[MessageOut]:
     rows = store.thread_messages(thread_id)[-max(1, min(limit, 500)) :]
     if rows and rows[0].user_id != get_settings().default_user_id:
         raise HTTPException(404)
+    with session() as s:
+        originals = {
+            m.message_id: m.text
+            for m in s.exec(
+                select(ForgottenMessage).where(
+                    ForgottenMessage.thread_id == thread_id,
+                    ForgottenMessage.user_id == get_settings().default_user_id,
+                )
+            ).all()
+        }
     return [
-        MessageOut(role=str(m.role.value), text=m.text, created_at=str(m.created_at)) for m in rows
+        MessageOut(
+            role=str(m.role.value), text=originals.get(m.id, m.text), created_at=str(m.created_at)
+        )
+        for m in rows
     ]
 
 

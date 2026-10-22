@@ -80,9 +80,9 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
    and draft-local instructions do not leak into other sessions.
 6. **Supersede, don't overwrite.** Changed preferences get a new version; the old one is marked
    superseded with a timestamp, so "what did I say before?" is answerable.
-7. **Forget is a hard delete everywhere:** messages, facts, summaries, FTS + vector rows,
-   doc notes, stored tool-call args, serialized PydanticAI histories. Test greps the DB file
-   (after `VACUUM`) for the forgotten value.
+7. **Forget excludes content from all agent memory paths.** `MEMORY_FORGET_MODE=soft`
+   (default, user direction 2026-10-22) preserves display-only chat originals, never indexed or
+   read by agents. `hard` also purges original text from disk; disk-grep acceptance uses hard mode.
 8. **Large inputs are never inlined.** Tools return bounded output; docs > budget are read in
    chunks and distilled into a persisted doc note (keep key facts like dates verbatim).
 9. **Capabilities are plugins:** name, one-line description, schema, `instructions.md`, handler.

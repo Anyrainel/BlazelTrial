@@ -341,8 +341,9 @@ def erase(
     messages: list[str] | None = None,
     many_ok: bool = False,
 ) -> str:
-    """Permanently delete, from every conversation, everything containing these strings, and
-    anything derived from it (records, notes, saved outputs, sent messages). Cannot be undone.
+    """Remove from active memory, in every conversation, everything containing these strings,
+    and anything derived from it (records, notes, saved outputs, sent messages).
+    Configuration determines whether display-only original messages are retained.
 
     Args:
         values: distinctive strings (at least 5 characters), e.g. "27 Larkspur Lane".

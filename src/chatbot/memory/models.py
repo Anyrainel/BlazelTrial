@@ -59,6 +59,16 @@ class Message(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
+class ForgottenMessage(SQLModel, table=True):
+    """Display-only originals. Never indexed or exposed to agent memory tools."""
+
+    message_id: int = Field(primary_key=True)
+    user_id: str = Field(index=True)
+    thread_id: str = Field(index=True)
+    text: str
+    forgotten_at: datetime = Field(default_factory=utcnow)
+
+
 class Scope(StrEnum):
     USER = "user"  # about the user / standing preferences: visible in every thread
     THREAD = "thread"  # only for the session it was said in

@@ -2,6 +2,30 @@
 
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
+## Soft forgetting and context settings (2026-10-22 Pacific)
+
+User explicitly changed the earlier hard-only forget policy: retain chat text for users but
+exclude forgotten content from agent retrieval, and expose context turn counts as settings.
+Default `MEMORY_FORGET_MODE=soft` now moves originals to a separate display-only table while
+active rows become neutral completed-turn placeholders with no run JSON. Existing derived
+memory/index invalidation still applies; reindex and maintenance cannot read archived text.
+HTTP history overlays originals after checking ownership. Soft mode preserves the current
+reply; hard mode keeps redaction/disk purge and can purge earlier display archives. Additive
+table creation supports the current local database without deleting it. D44 supersedes D35.
+
+The 8/25/16 values were already centralized environment settings. Exposed them and the history
+token budget in `.env.example`, documented restart semantics, and validated positive chunk/
+window sizes and non-negative delay/budget. Existing notes are not regrouped automatically.
+165 offline tests pass; ruff passes. New regressions cover display preservation, agent read,
+grep/search/replay isolation, reindex safety, owner isolation, hard purge after soft forget,
+current reply preservation, and environment/invalid-value settings. Test authoring mistakes
+caught: omitted required `chars_per_token` and passed an argument to `reindex_missing()`;
+corrected against actual signatures. Existing disk/reply-redaction tests now select hard mode.
+Live Bonsai soft-forget smoke: remembered a synthetic address, forgot it, then could not
+recall it; original text remained in HTTP history and active search had no hit. 14 model
+calls, maximum 2,926 input tokens, zero violations. Restarted the dev API in soft mode;
+Vite-proxied health check passes at http://127.0.0.1:5173.
+
 ## Budget resilience and the memory worker (2026-10-22)
 
 User direction after the scope review: fail fast / count with provider help; make search,

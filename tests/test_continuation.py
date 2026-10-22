@@ -194,6 +194,8 @@ def test_tool_side_effects_survive_a_retried_turn(monkeypatch):
     (here: values forgotten) must still drive the post-turn scrub."""
     from chatbot.agent.budget import BudgetExceededError
 
+    monkeypatch.setenv("MEMORY_FORGET_MODE", "hard")
+    get_settings.cache_clear()
     core.ingest("me", "A", "My locker code is 55-81-23.", reply="ok")
     attempts = 0
 

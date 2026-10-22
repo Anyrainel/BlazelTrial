@@ -1,4 +1,8 @@
-"""Forget: a hard delete of given values from everything stored for a user (contract §7).
+"""Forget: remove given values from active memory everywhere for a user.
+
+Soft mode keeps original message text in ForgottenMessage for HTTP display only and replaces
+active messages with neutral completion placeholders. No memory reader accesses that table.
+Hard mode also purges display originals and removes the bytes from disk (contract §7).
 
 Deterministic and user-wide (every session), serialized with all other memory writes:
 - original messages containing a value are deleted (with their index rows); stored runs of the
@@ -20,12 +24,14 @@ from dataclasses import dataclass, field
 
 from sqlmodel import col, select
 
+from chatbot.config import get_settings
 from chatbot.memory import refs, search
 from chatbot.memory.db import get_engine, session
 from chatbot.memory.models import (
     Checkpoint,
     EpisodeNote,
     Fact,
+    ForgottenMessage,
     MemoryRecord,
     Message,
     NoteSource,
@@ -99,9 +105,15 @@ def forget_values(
     *,
     message_ids: Iterable[int] = (),
     compact: bool = True,
+    mode: str | None = None,
 ) -> ForgetReport:
-    """Erase `values` everywhere, plus whole turns of `message_ids` (messages that discuss the
-    thing without containing a distinctive string)."""
+    """Forget `values` and whole turns of `message_ids` using the configured mode.
+
+    Explicit mode="hard" also purges matching previously archived display originals.
+    """
+    mode = mode or get_settings().memory_forget_mode
+    if mode not in {"soft", "hard"}:
+        raise ValueError("forget mode must be soft or hard")
     values, rejected = clean_values(values)
     explicit = set(message_ids)
     report = ForgetReport(rejected=rejected)
@@ -111,6 +123,13 @@ def forget_values(
     matches = lambda text: bool(text) and bool(hit.search(text))  # noqa: E731
 
     with _write_lock, session() as s:
+        if mode == "hard":
+            for archived in s.exec(
+                select(ForgottenMessage).where(ForgottenMessage.user_id == user_id)
+            ).all():
+                if matches(archived.text) or archived.message_id in explicit:
+                    explicit.add(archived.message_id)
+                    s.delete(archived)
         # 1. original messages
         msgs = s.exec(select(Message).where(Message.user_id == user_id)).all()
         turns = {(m.thread_id, m.turn) for m in msgs if m.id in explicit}
@@ -128,7 +147,11 @@ def forget_values(
             (m.thread_id, m.turn) for m in msgs if m.role == Role.USER and m.id not in gone_ids
         }
         for m in gone_msgs:
-            if m.role == Role.ASSISTANT and (m.thread_id, m.turn) in surviving_users:
+            if (
+                mode == "hard"
+                and m.role == Role.ASSISTANT
+                and (m.thread_id, m.turn) in surviving_users
+            ):
                 s.add(
                     Message(
                         thread_id=m.thread_id,
@@ -142,7 +165,21 @@ def forget_values(
                 )
         for m in msgs:
             if m.id in gone_ids:
-                s.delete(m)
+                if mode == "soft":
+                    if s.get(ForgottenMessage, m.id) is None:
+                        s.add(
+                            ForgottenMessage(
+                                message_id=m.id,
+                                user_id=m.user_id,
+                                thread_id=m.thread_id,
+                                text=m.text,
+                            )
+                        )
+                    m.text = "[Forgotten content. This turn was completed.]"
+                    m.run_messages_json = None
+                    s.add(m)
+                else:
+                    s.delete(m)
             elif m.run_messages_json and matches(m.run_messages_json):
                 m.run_messages_json = _redact_json(m.run_messages_json, hit)
                 s.add(m)

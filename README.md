@@ -174,9 +174,22 @@ uv run python scripts/eval_retrieval.py
     an answer and its sources.
   - `remember` / `update_memory` write versioned, source-linked records (session or
     long-term).
-  - `forget` hard-deletes a value everywhere, down to the bytes on disk.
+  - `forget(what)` lets the worker find every wording, then remove it from active memory.
+    Soft mode (default) keeps original chat text visible in a display-only archive, excluded
+    from agent reads, searches, replay and note maintenance. The current reply is preserved.
+    `MEMORY_FORGET_MODE=hard` also purges matching archived text from disk. Use hard mode for
+    the original assignment's scenario 6 disk-deletion acceptance check.
 - **Big documents** (`fetch_doc`, `search_doc`) are never inlined. They are read once by
   map-reduce into a cached note, with passages searchable.
+
+## Context configuration
+
+Context settings are centralized in `src/chatbot/config.py`, read from `.env` at startup:
+`HISTORY_WINDOW_STEP=8`, `SUMMARY_CHUNK_TURNS=25`, `SUMMARY_KEEP_RECENT_TURNS=16`, and
+`HISTORY_TOKEN_BUDGET=2500`. The first three mean window alignment, note segment size, and
+how far behind the newest turn a segment must be before summarization. Restart the API and
+Slack processes after changing settings. Existing notes remain; use a fresh state directory
+when comparing different segment sizes.
 
 ## Add a capability
 

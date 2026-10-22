@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -59,10 +59,10 @@ class Settings(BaseSettings):
     budget_strict: bool = False
 
     # Max estimated tokens of verbatim recent turns replayed into each chat request.
-    history_token_budget: int = 2500
+    history_token_budget: int = Field(default=2500, ge=0)
     # The replayed window starts on a multiple of this many turns, so it stays put (and the
     # prompt prefix stays cacheable) for several turns before sliding forward.
-    history_window_step: int = 8
+    history_window_step: int = Field(default=8, ge=1)
 
     # Embeddings (sqlite-vec): optional vector candidates for memory search and doc passages.
     embedding_backend: Literal["fastembed", "hash"] = "fastembed"  # hash = offline/tests
@@ -94,11 +94,13 @@ class Settings(BaseSettings):
     memory_write_max_requests: int = 6
     memory_forget_max_requests: int = 8
     memory_erase_max_messages: int = 15
+    # Soft forgetting preserves display-only chat text; hard forgetting purges it from disk.
+    memory_forget_mode: Literal["soft", "hard"] = "soft"
 
     # Episode notes: fixed segments of this many turns, written once they are this far behind
     # the newest turn (searchable via ask_memory, never injected).
-    summary_chunk_turns: int = 25
-    summary_keep_recent_turns: int = 16
+    summary_chunk_turns: int = Field(default=25, ge=1)
+    summary_keep_recent_turns: int = Field(default=16, ge=0)
 
     # Slack (Socket Mode). Every DM maps to DEFAULT_USER_ID; set SLACK_ALLOWED_USER (a Slack
     # user id like U0123) to ignore DMs from anyone else.

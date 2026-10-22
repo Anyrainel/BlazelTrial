@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+import pytest
+
 from chatbot import core
 from chatbot.agent.agent import get_agent
 from chatbot.agent.models import build_model
@@ -21,6 +23,13 @@ from tests.fakes import scripted, worker_answering
 DM = MemoryCaller("me", "slack-dm")
 A = MemoryCaller("me", "A")
 ADDRESS = "27 Larkspur Lane, Apt 4B, Portland, OR 97214"
+
+
+@pytest.fixture(autouse=True)
+def hard_forget_contract(monkeypatch):
+    """These regressions explicitly verify permanent deletion, including disk bytes."""
+    monkeypatch.setenv("MEMORY_FORGET_MODE", "hard")
+    get_settings.cache_clear()
 
 
 def on_disk(needle: str) -> bool:

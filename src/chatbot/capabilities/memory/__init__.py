@@ -73,8 +73,9 @@ async def update_memory(
 
 
 async def forget(ctx: RunContext, what: str) -> str:
-    """Permanently forget something the user asked to forget, from every conversation: messages,
-    memory, summaries, saved outputs. Memory finds every place and wording; do not search first.
+    """Forget something the user asked to forget, from every conversation: messages,
+    memory, summaries, saved outputs. Display-only chat originals may remain depending on
+    configuration. Memory finds every place and wording; do not search first.
 
     Args:
         what: the thing to forget in the user's words, e.g. "my home address".

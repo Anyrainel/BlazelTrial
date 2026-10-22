@@ -124,7 +124,8 @@ async def _reply(user_id: str, thread_id: str, user_msg) -> tuple[str, str, list
     # A tool may fix the reply (e.g. a validated LinkedIn post) so the model can't alter it.
     reply = deps.outputs.get("reply") or reply_text(result)
     forgotten = deps.outputs.get("forget", [])
-    reply = forget.redact(reply, forgotten)  # never echo what was just forgotten
+    if get_settings().memory_forget_mode == "hard":
+        reply = forget.redact(reply, forgotten)
     stored = _for_storage(result.new_messages(), user_msg.text)
     return reply, ModelMessagesTypeAdapter.dump_json(stored).decode(), forgotten
 
