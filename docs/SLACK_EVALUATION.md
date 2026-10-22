@@ -104,3 +104,76 @@ rerun of all seven long-history acceptance scenarios through Slack.
 
 Screenshot evidence is retained locally in `.state/logs/slack-qa-742.png`
 (gitignored). The Slack bot process is left running for continued testing.
+
+## Cross-surface and cross-conversation follow-up — 2026-10-21 Pacific
+
+Used real Slack DMs/reply threads, #test, and two CLI sessions sharing the same
+single-user identity. Session B was opened before A saved the test fact. These
+CLI calls exercise the main-chat core; the web and HTTP UI were not exercised.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Main A fact -> already-open main B | PASS | B recalled the fictional coordinator saved later in A. |
+| Main A fact -> live Slack DM | PASS | Slack recalled the coordinator without the name appearing in the question. |
+| A draft-only prefix -> B and Slack | PASS | Neither destination used A's one-off prefix in its requested announcement. |
+| Slack updates shared fact -> existing A and B | PASS | Both recalled current and previous names correctly. |
+| Version history | PASS | Read-only DB inspection confirmed a two-record supersession chain, with origins A then slack-dm. |
+| Top-level DM shared fact -> Slack reply thread | PASS | Thread reply used current and previous names and stayed under its parent. |
+| Thread draft-only prefix -> next top-level DM and main B | PASS before forget | Neither subsequent announcement used the thread's one-off prefix. |
+| #test-only fact -> DM | UNSUPPORTED | No channel reply; DM explicitly said it could not access the label; no message row contained the channel-only sentinel. |
+| Main B forget -> existing main A and Slack reply thread | PASS for deletion/recall | Both stopped recalling names; DB byte search found neither full name. See the separate behavioral regression below. |
+
+Initial main-chat and all Slack calls used Claude Sonnet 5.5. The repository's
+provider setting changed to local Bonsai 2 during the evaluation; newly started
+CLI calls for updated-fact recall and forgetting used Bonsai. Logs establish the
+provider of each call. Those results demonstrate shared persistence across
+providers, but are not a controlled same-model comparison. No provider setting
+was changed by this evaluation.
+
+Channel membership was independently checked with `/invite @Hazel`: Slackbot
+reported that Hazel was already in #test. A channel-only synthetic deployment
+label still never entered the core. Thus channel-to-channel memory cannot be
+validated through this adapter until channel handling exists. Silence here must
+not be scored as successful channel isolation.
+
+### New P2 — Forgetting revives an old draft-only instruction
+
+Live sequence:
+
+1. In a Slack reply thread request a release draft with prefix `THREAD-LOCAL-853`,
+   explicitly **for this draft only**, including the shared coordinator names.
+2. Ask for another release draft in the top-level DM. It correctly omits the prefix.
+3. From main session B, forget both coordinator names across sessions.
+4. Back in the existing Slack reply thread, ask only who the current and previous
+   coordinators are, explicitly asking it not to guess.
+
+The answer correctly says the names are unavailable, but then appends an
+unrequested release announcement starting with `THREAD-LOCAL-853`. This is a
+failure of the one-off instruction lifetime, even though the names were deleted.
+
+[Thread instruction](https://blazeltrial.slack.com/archives/D0CACNKNE1Z/p1792651257477639?thread_ts=1792651120.216159&cid=D0CACNKNE1Z),
+[leaked prefix after forget](https://blazeltrial.slack.com/archives/D0CACNKNE1Z/p1792651368262489?thread_ts=1792651120.216159&cid=D0CACNKNE1Z).
+
+Read-only DB inspection after forgetting showed user requests in turns 8, 11 and
+12 still present, but their assistant replies removed because they contained the
+forgotten names. `memory/messages.py:_turn_messages` replays those orphan user
+requests as user prompts. This is a plausible mechanism for reviving apparently
+unfinished requests; causality needs a focused offline regression test. Retain
+safe completion metadata or a neutral completion marker after deletion so replay
+does not treat old fulfilled instructions as outstanding work. Never retain the
+forgotten values to solve this.
+
+A subsequent fresh top-level draft omitted the prefix, so the observed regression
+is the post-forget thread answer above, not a claim that every later draft leaks.
+
+The single endless `slack-dm` conversation intentionally shares memory between
+top-level messages and Slack reply threads. They are not independent sessions.
+No second Slack user, second workspace, private channel, or multi-user isolation
+was tested. The tests used synthetic data only.
+
+Follow-up validation: 119 offline tests passed in 21.84 s (the suite grew during
+concurrent repository work). The follow-up window contained 122 model calls for
+the two QA sessions and Slack, max provider input 7,144 tokens, no provider budget
+violations or pre-flight refusals. Screenshot:
+`.state/logs/slack-cross-qa-853.png` (gitignored). Coordinator test facts were
+forgotten through the product; Slack-hosted messages remain as evidence.

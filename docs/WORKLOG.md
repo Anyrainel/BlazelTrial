@@ -2,6 +2,22 @@
 
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
+## Cross-conversation Slack evaluation follow-up (2026-10-21 Pacific)
+
+Extended [SLACK_EVALUATION.md](SLACK_EVALUATION.md) with existing-session recall,
+main-chat -> Slack, Slack update -> two main sessions, version-chain inspection,
+thread/top-level draft-only isolation and cross-surface forget. Shared persistence
+and deletion passed; #test facts never entered the core (channels unsupported).
+Found a new behavioral regression after forgetting: the Slack thread answered a
+coordinator recall question but also revived an earlier one-off draft prefix.
+Deletion left old user requests with their assistant replies removed; replay is
+the suspected mechanism, not proven causal. Follow-up top-level draft was clean.
+Provider changed externally mid-run: Slack stayed Claude; later CLI probes used
+Bonsai. Report separates this limitation. 119 tests passed; 122 live calls,
+max input 7,144, zero violations/refusals. No source changes.
+Evaluation mistake caught: used `supersedes` instead of `supersedes_id` in a
+read-only inspection probe; corrected via the actual model fields.
+
 ## Slack integration evaluation (2026-10-21 Pacific)
 
 Evaluated the running build in real Hazel DMs and #test; report:
