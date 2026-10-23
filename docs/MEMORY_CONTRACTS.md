@@ -1,6 +1,6 @@
 # Memory contracts (PLAN step 1)
 
-Concrete contracts for the accepted memory architecture ([PLAN.md](../PLAN.md) "Memory
+Concrete contracts for the accepted memory architecture ([PLAN.md](PLAN.md) "Memory
 architecture and contracts"; D23, D29, D30). This fixes interfaces, ids, ownership and mutation
 rules; the build order is PLAN's implementation sequence. Nothing here is runtime behaviour yet.
 

@@ -1,5 +1,11 @@
 # Work log
 
+## Development document moves (2026-10-23 Pacific)
+
+Committed the user's moves of PLAN.md and assignment.md into docs/. Updated affected plan,
+memory-contract and repository-instruction references. Documentation-only; git diff --check
+passes. No application behavior changed.
+
 ## README setup-first rewrite (2026-10-23 Pacific)
 
 Reorganized README around install/configure/chat, then .env reference, then optional model,

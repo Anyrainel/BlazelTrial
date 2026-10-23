@@ -1,6 +1,6 @@
 # Plan
 
-Spec: [docs/PROBLEM.md](docs/PROBLEM.md) · Stack: [docs/DECISIONS.md](docs/DECISIONS.md) · Rules: [AGENTS.md](AGENTS.md)
+Spec: [PROBLEM.md](PROBLEM.md) · Stack: [DECISIONS.md](DECISIONS.md) · Rules: [AGENTS.md](../AGENTS.md)
 
 ## Approach
 One core `send(user_id, thread_id, text)` on PydanticAI. Keep each model request under the

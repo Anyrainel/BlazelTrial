@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Shared instructions for **Claude Code and Codex**. Keep this file short; details live in the
-linked docs. Spec: [docs/PROBLEM.md](docs/PROBLEM.md) (source of truth: `assignment.md`).
+linked docs. Spec: [docs/PROBLEM.md](docs/PROBLEM.md) (source of truth: `docs/assignment.md`).
 Stack rationale: [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## What this is
@@ -78,7 +78,7 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
    chat instructions, capped by `PREFERENCES_MAX_CHARS` / `SESSION_PREFERENCES_MAX_CHARS` and
    enforced when writing (over-limit writes are refused; the memory worker merges or retires).
    Target recall interface: `ask_memory` backed by a bounded read-only subagent searching source
-   records and source-linked summary notes with BM25 (PLAN.md; D29-D30). Session and long-term
+   records and source-linked summary notes with BM25 (docs/PLAN.md; D29-D30). Session and long-term
    stores persist separately in visibility; detailed scope/lifetime policies remain open.
    Preserve acceptance behaviour: shared facts are recallable across sessions,
    and draft-local instructions do not leak into other sessions.
