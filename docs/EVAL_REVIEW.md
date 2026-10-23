@@ -64,3 +64,10 @@ Offline suite at review time: 198 passed, one failure in concurrently added
 `tests/test_preferences.py` (`core.subagent_work` missing). The two new budget-check
 regressions pass; scoped ruff and diff checks pass. Eval changes do not touch the
 runtime model/memory files involved in that failure.
+
+Final verification: second live run `.state/scenarios/20261022-185054` reproduced
+S5 PASS / S8 FAIL / S9 PASS; 60 calls, max 4,103 input tokens, zero violations or
+refusals. Final harness wrote eval-results.json successfully. Full pytest rerun:
+199 passed (the concurrent preferences test issue is now resolved in current tree).
+Scoped ruff and git diff --check pass. Scenario 6 precondition and scenario 3
+summary strengthening were inspected but not live-rerun in this review.

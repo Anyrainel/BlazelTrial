@@ -482,3 +482,7 @@ Live review run: S5 PASS, S8 FAIL (B retained Elena after A saved Marco), S9 PAS
 198 passed, one concurrent test_preferences failure (core.subagent_work missing).
 New eval checker regressions 2/2 pass; scoped ruff/diff checks pass. Original full
 acceptance scenarios not rerun. A second targeted run verifies final harness output.
+Final review verification: 199 pytest tests pass on rerun. Second live targeted run
+again S5 PASS, S8 FAIL, S9 PASS; 60 calls, max 4103 input, no budget violations;
+structured eval-results.json saved. Scoped ruff/diff checks pass. Full original
+scenario suite, strengthened S3 and S6 not live-rerun.
