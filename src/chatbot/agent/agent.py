@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from functools import cache
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -14,6 +14,8 @@ from chatbot.agent.history import fit_history
 from chatbot.agent.models import build_model
 from chatbot.capabilities import registry
 from chatbot.config import get_settings
+from chatbot.memory import records
+from chatbot.memory.records import MemoryCaller
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,38 @@ class ChatDeps:
     outputs: dict = field(default_factory=dict)
 
 
+def preference_block(user_id: str, thread_id: str) -> str:
+    """The standing preferences, the one memory injected into every request (size-capped)."""
+    views = records.current_preferences(MemoryCaller(user_id, thread_id))
+    if not views:
+        return ""
+    lines = [
+        f"- {v.text}" + (" (this conversation only)" if v.store == "session" else "") for v in views
+    ]
+    intro = (
+        "## Standing preferences\n"
+        "The user's rules for how you write and behave. Follow them in everything you do; "
+        "they override your defaults. Change them only through `update_memory`.\n"
+    )
+    return intro + "\n".join(lines)
+
+
+def chat_instructions(ctx: RunContext[ChatDeps]) -> str:
+    """The whole system text as ONE instruction: static parts first, preferences last (the only
+    part that ever changes). Separate instruction parts become separate system messages, which
+    chat templates such as Bonsai's reject ("System message must be at the beginning")."""
+    parts = [prompts.load("system"), registry.instructions_block()]
+    parts.append(preference_block(ctx.deps.user_id, ctx.deps.thread_id))
+    return "\n\n".join(p for p in parts if p)
+
+
+def preference_reserve_tokens() -> int:
+    """Worst-case size of the preference block, reserved when sizing the rest of the context."""
+    settings = get_settings()
+    chars = settings.preferences_max_chars + settings.session_preferences_max_chars
+    return int(chars / settings.estimate_chars_per_token) + 60
+
+
 @cache
 def get_agent() -> Agent[ChatDeps, str]:
     """Build the chat agent once. Tests swap the model with `get_agent().override(model=...)`.
@@ -39,7 +73,7 @@ def get_agent() -> Agent[ChatDeps, str]:
     agent = Agent(
         build_model(get_settings()),
         deps_type=ChatDeps,
-        instructions=[prompts.load("system"), registry.instructions_block()],
+        instructions=chat_instructions,
         capabilities=[ProcessHistory(fit_history)],
         # Explicit breakpoints instead of automatic caching: one after tools + instructions,
         # one before the current message (see core._user_prompt). Other providers ignore these.
@@ -82,4 +116,4 @@ def static_prompt_tokens() -> int:
     """System prompt + capability instructions + tool schemas: sent with every chat request."""
     cpt = get_settings().estimate_chars_per_token
     static = prompts.load("system") + registry.instructions_block()
-    return int(len(static) / cpt) + tool_schema_tokens()
+    return int(len(static) / cpt) + tool_schema_tokens() + preference_reserve_tokens()

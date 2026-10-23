@@ -292,7 +292,7 @@ def write(
             previous = _visible_record(s, caller, sp.id)
             if previous is None:
                 raise _not_found(supersedes)
-            if previous.superseded_by is not None:
+            if previous.superseded_by is not None or previous.superseded_at is not None:
                 raise MemoryAccessError(
                     f"{supersedes} is not the current version "
                     f"(current: {refs.rec(_current_id(s, previous))})"
@@ -302,6 +302,9 @@ def write(
                     f"{supersedes} is a {previous.store.value} {previous.kind.value}; "
                     "a new version must keep its store and kind"
                 )
+
+        if kind_ == RecordKind.PREFERENCE:
+            _check_preference_budget(s, caller, store_, text, replacing=previous)
 
         record = MemoryRecord(
             user_id=caller.user_id,
@@ -325,6 +328,82 @@ def write(
         search.index_record(s.connection(), record)  # same transaction as the record
         s.commit()
         return _view(s, record)
+
+
+def preference_limit(store: Store) -> int:
+    settings = get_settings()
+    if store == Store.SESSION:
+        return settings.session_preferences_max_chars
+    return settings.preferences_max_chars
+
+
+def _current_preferences(
+    s: Session, caller: MemoryCaller, store: Store | None = None
+) -> list[MemoryRecord]:
+    """Current preference records the caller may see, oldest first (stable prompt order)."""
+    rows = s.exec(
+        select(MemoryRecord)
+        .where(
+            MemoryRecord.user_id == caller.user_id,
+            MemoryRecord.kind == RecordKind.PREFERENCE,
+            col(MemoryRecord.superseded_at).is_(None),
+        )
+        .order_by(col(MemoryRecord.id))
+    ).all()
+    return [
+        r
+        for r in rows
+        if (store is None or r.store == store)
+        and (r.store == Store.LONG_TERM or r.session_id == caller.session_id)
+    ]
+
+
+def _check_preference_budget(
+    s: Session,
+    caller: MemoryCaller,
+    store: Store,
+    text: str,
+    replacing: MemoryRecord | None,
+) -> None:
+    """Preferences are injected into every request, so their total size is capped."""
+    others = [
+        r for r in _current_preferences(s, caller, store) if not replacing or r.id != replacing.id
+    ]
+    used, limit = sum(len(r.text) for r in others), preference_limit(store)
+    if used + len(text) > limit:
+        raise MemoryAccessError(
+            f"preference limit: {used} of {limit} characters are in use for {store.value} "
+            f"preferences and this one needs {len(text)}; make it shorter, or merge it with "
+            "another, or retire one that no longer matters"
+        )
+
+
+def retire(caller: MemoryCaller, ref: str) -> RecordView:
+    """Stop using a current record without replacing it (its history stays)."""
+    parsed = refs.parse(ref)
+    with _write_lock, session() as s:
+        r = _visible_record(s, caller, parsed.id) if parsed and parsed.type == "rec" else None
+        if r is None:
+            raise _not_found(ref)
+        if r.superseded_at is not None:
+            raise MemoryAccessError(f"{ref} is not a current record")
+        r.superseded_at = utcnow()
+        s.add(r)
+        s.commit()
+        return _view(s, r, with_sources=False)
+
+
+def current_preferences(caller: MemoryCaller) -> list[RecordView]:
+    """Long-term preferences, then this conversation's, within their caps (oldest dropped first
+    if a cap was lowered after they were written)."""
+    out: list[RecordView] = []
+    with session() as s:
+        for store in (Store.LONG_TERM, Store.SESSION):
+            rows = _current_preferences(s, caller, store)
+            while rows and sum(len(r.text) for r in rows) > preference_limit(store):
+                rows = rows[1:]
+            out += [_view(s, r, with_sources=False) for r in rows]
+    return out
 
 
 def _current_id(s: Session, r: MemoryRecord) -> int:

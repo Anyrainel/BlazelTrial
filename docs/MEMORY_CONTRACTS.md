@@ -15,7 +15,13 @@ rules; the build order is PLAN's implementation sequence. Nothing here is runtim
 | Memory worker, forget mode | `erase` | model-chosen strings/messages handed to the deterministic hard delete |
 | Diagnostics / evals | same low-level handlers, callable directly | offline recall comparisons |
 
-No memory contents, title catalogs or search hits are injected into prompts by the harness.
+No memory contents, title catalogs or search hits are injected into prompts by the harness,
+with one bounded exception: current **preference** records (long-term + this session's) form a
+"Standing preferences" block in the chat instructions (always on, so it cannot depend on the model
+remembering to look). Total size is capped per store (`PREFERENCES_MAX_CHARS` 1200,
+`SESSION_PREFERENCES_MAX_CHARS` 400) and enforced in `records.write`: a preference write that
+would exceed the cap is refused with the used/limit sizes. `retire(ref)` stops using a current
+record without a successor (history stays); a retired record cannot be revised.
 
 ## 2. Stores and ownership
 - **Caller** = `MemoryCaller(user_id, session_id)`, built only from trusted run dependencies.

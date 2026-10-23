@@ -183,7 +183,11 @@ uv run python scripts/eval_retrieval.py
     memory records, raw messages, episode notes and opened document passages (plus an exact
     `grep`) and returns a status, an answer and its sources.
   - `update_memory(change, scope)` lets the worker find the records a statement replaces and
-    write a new version (the old one stays as history), or save a new record.
+    write a new version (the old one stays as history), save a new record, or retire one.
+    Preference records are the one memory always injected ("Standing preferences" in the
+    instructions), so they are short rules with a total size cap (`PREFERENCES_MAX_CHARS`,
+    `SESSION_PREFERENCES_MAX_CHARS`); a write over the cap is refused until something is
+    shortened, merged or retired.
   - `forget(what)` lets the worker find every wording, then remove it from active memory.
     Soft mode (default) never removes chat history: a message holding the forgotten value stays
     in the conversation as written, flagged `forgotten`, and memory never uses it again (not

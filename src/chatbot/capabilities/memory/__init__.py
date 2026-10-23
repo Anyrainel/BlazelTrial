@@ -54,7 +54,7 @@ async def update_memory(
     Args:
         change: what is now true, in one sentence with names, dates and numbers verbatim, e.g.
             "The user's manager is Priya Raman" or "The user now wants American spelling
-            (was British)".
+            (was British)". Preferences are sent with every request: keep them short.
         scope: "long_term" for durable facts and standing preferences (every conversation),
             "session" for what applies only to this conversation.
     """

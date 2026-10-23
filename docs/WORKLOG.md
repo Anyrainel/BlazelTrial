@@ -32,6 +32,28 @@ an earlier run that was spending time generating long Bonsai episode notes. Note
 is covered by the offline hard-delete regressions. Feature commit: 8bf827c; earlier user edits
 to frontend, system prompt and unrelated README sections were preserved and left unstaged.
 
+## Always-on preferences (2026-10-22)
+
+User approved the design (reuse preference records; always injected; total size limited; AGENTS
+invariant 5 overridden). Built: `current_preferences`, per-store size cap in `records.write`,
+`retire`, one dynamic chat instruction, budget reserve, worker prompt + tool hints, main-agent
+memory instructions (no more "look up preferences before drafting"). Mistake caught live: my first
+version passed the preference block as a second instruction, which PydanticAI maps to a second
+system message; Bonsai's template answers HTTP 500 ("System message must be at the beginning"),
+and Codex's new require-counts rule then refused to send. Now one instruction part, with a test
+on the mapped OpenAI payload. S4 still failed on Bonsai because it answered with questions
+instead of a draft; the system prompt now says the reply IS the text (placeholders, never
+questions instead). Live Bonsai: S4 PASS (British draft before, American after, history
+explained), S5 PASS, S1 PASS.
+
+Full Bonsai run on this build (9 scenarios incl. Codex's new 8 and 9, 500 turns): 7/9 on the
+first pass; S3 ("I don't have context on which plan you're referring to") and S8 (session B
+repeated its earlier answer "Elena Voss" after the manager changed) failed for the same reason:
+Bonsai answered from the conversation instead of calling `ask_memory`. Added one system-prompt
+rule (memory changes, also from other conversations; for current facts/plans/documents call
+`ask_memory` again, never repeat an old answer). Re-run: S3, S8, S9 pass; S1, S2, S4, S5, S6, S7
+pass. Max input 6,292, nothing over the limit.
+
 ## Soft forget as a flag (2026-10-22, supersedes the masking below)
 
 User: chat history must stay intact; soft forget = a database flag keeping the message out of

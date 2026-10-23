@@ -69,6 +69,7 @@ class WorkResult(BaseModel):
     status: Literal[
         "saved",
         "revised",
+        "retired",
         "unchanged",
         "skipped",
         "erased",
@@ -332,6 +333,18 @@ def revise(
     return f"Saved {_shown(view)} (replaces {record})"
 
 
+def retire(ctx: RunContext[WorkerDeps], record: str) -> str:
+    """Stop using a current record without replacing it, e.g. a preference the user dropped or
+    one to remove to make room. Its history stays."""
+    deps = ctx.deps
+    try:
+        view = records.retire(deps.caller, record)
+    except MemoryAccessError as exc:
+        return f"Not retired: {exc}"
+    deps.actions.append(f"retired {_shown(view)}")
+    return f"Retired {_shown(view)}"
+
+
 # --- tools (forget mode) ----------------------------------------------------------------------
 
 
@@ -407,7 +420,7 @@ def _own_message_ids(user_id: str, message_refs: list[str]) -> list[int]:
 _COMMON = (grep, list_records, search, read, expand, versions)
 _TOOLS = {
     Mode.READ: _COMMON,
-    Mode.WRITE: (*_COMMON, save, revise),
+    Mode.WRITE: (*_COMMON, save, revise, retire),
     Mode.FORGET: (*_COMMON, erase),
 }
 

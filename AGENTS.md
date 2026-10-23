@@ -72,7 +72,11 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
    budget forces it; compact in chunks so the prefix stays stable between compactions.
 4. **History integrity.** History processors never split a tool call from its return.
 5. **Memory design is evolving.** Agents read and write memory through bounded tools;
-   do not automatically inject stored facts, preferences, summaries, or search hits every turn.
+   do not automatically inject stored facts, summaries, or search hits every turn. **One
+   exception (user decision 2026-10-22):** current *preference* records (long-term, plus this
+   conversation's session ones) are always injected as a "Standing preferences" block in the
+   chat instructions, capped by `PREFERENCES_MAX_CHARS` / `SESSION_PREFERENCES_MAX_CHARS` and
+   enforced when writing (over-limit writes are refused; the memory worker merges or retires).
    Target recall interface: `ask_memory` backed by a bounded read-only subagent searching source
    records and source-linked summary notes with BM25 (PLAN.md; D29-D30). Session and long-term
    stores persist separately in visibility; detailed scope/lifetime policies remain open.

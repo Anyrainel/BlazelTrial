@@ -125,9 +125,9 @@ def fit_history(ctx: RunContext, messages: list[ModelMessage]) -> list[ModelMess
     settings = get_settings()
     target = settings.context_target_tokens
     # Instructions are counted by the estimate itself; add the tool schemas and the margin.
-    from chatbot.agent.agent import tool_schema_tokens
+    from chatbot.agent.agent import preference_reserve_tokens, tool_schema_tokens
 
-    overhead = tool_schema_tokens() + settings.tool_overhead_tokens
+    overhead = tool_schema_tokens() + preference_reserve_tokens() + settings.tool_overhead_tokens
     cpt = settings.estimate_chars_per_token
     params = ModelRequestParameters()
 

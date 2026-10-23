@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     memory_write_max_requests: int = 6
     memory_forget_max_requests: int = 8
     memory_erase_max_messages: int = 15
+
+    # Standing preferences (records of kind "preference") are the one thing injected into every
+    # chat request. Total size is capped per store, enforced when writing; writes over the cap are
+    # refused so the agent must shorten, merge or retire first.
+    preferences_max_chars: int = 1200  # long-term, all conversations
+    session_preferences_max_chars: int = 400  # this conversation only
     # Soft forgetting preserves display-only chat text; hard forgetting purges it from disk.
     memory_forget_mode: Literal["soft", "hard"] = "soft"
 
