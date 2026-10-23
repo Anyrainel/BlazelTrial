@@ -856,3 +856,18 @@ and repeats a sentence. No production/model change attempted during the demo.
 ## Harness illustration (2026-10-23 Pacific)
 Generated docs/diagrams/chatbot-harness.png with built-in imagegen from current architecture docs and core implementation. Assumption: harness means the chatbot runtime. Visually checked single-screen labels, shared core, tool-based memory, capability paths, persistence and universal budget guard. Illustration only; no runtime changes or scenario execution.
 
+
+## Bad HTTP demo recording cleanup (2026-10-23 Pacific)
+
+User requested removal of the recent HTTP recording sessions and their memory while
+preserving Slack history. Current DB contained exactly two web sessions
+(s-67215d7f, s-ad5592c4), six messages and one derived manager record (27).
+Used existing hard session-forget operations, then removed the empty thread rows
+and document references. Also removed the three saved tool outputs and one
+checkpoint belonging to those web sessions. No value-wide sweep was used.
+Verified hashes of every remaining persisted model row before/after: unchanged,
+including all 1,040 Slack messages (520 turns), memory versions, sources, notes,
+document data and delivery receipts. Live HTTP /threads lists only Slack DM.
+No inference was needed for this data cleanup; no model scenario or new usage.
+Existing unrelated runtime/log modifications were left in place.
+Validation: 230 offline tests pass; git diff --check passes.
