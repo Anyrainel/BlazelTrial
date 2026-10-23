@@ -775,3 +775,20 @@ checks pass. Final focused live results follow.
 Final wording: S4/S5/S8 PASS, 75 real Bonsai calls, maximum 4,108 input tokens, no budget
 violations or preflight refusals. Temporary state removed. S1/S6/S7 passed on the earlier
 broader wording; no full nine-scenario rerun on the final conservative edit.
+
+## Real Slack 520-turn demo (2026-10-22 Pacific)
+
+User authorized a fresh live DM conversation: unique detail at 20, Q3-plan summary
+at 350, date recall at 450, detail recall at 501, LinkedIn post at 520; two fictional
+home-address remember/forget cycles and spelling switches along the way. Count one
+human request plus its generated reply as a turn. All requests use the Slack browser
+composer and the current checkout's Socket Mode worker; no ingest or fabricated replies.
+Active DB and usage log moved into a recoverable .state/backups folder; documents
+and models retained. Live state is intentionally retained as the requested demo.
+AI mistake caught by user: reset initially cleared the DB but left a stale bot DM
+visible in Slack. Deleted that specific bot message via chat.delete and verified
+its removal in the browser. No discussion of its topic in the new conversation.
+Automation mistake: an initial reply wait matched the previous reply before Slack
+rendered the new request, briefly queueing turns 2-6. Verified all five completed
+through the real worker; subsequent turns wait for the new request then its reply.
+Initial validation: 230 offline tests pass. Live checkpoints/results to follow.
