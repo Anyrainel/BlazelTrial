@@ -1,5 +1,24 @@
 # Work log
 
+## Automatic evaluation cleanup (2026-10-22 Pacific)
+
+User requested automatic removal of future temporary evaluation state. Assumption: clean
+automatically allocated runs even when scenarios fail; explicit --state-dir remains owned
+by the caller, and --keep-state opts into retaining a fresh run's evidence. Added a small
+supervisor for python -m scenarios; existing scenario logic lives in scenarios/runner.py.
+The supervisor allocates collision-free TemporaryDirectory roots under .state/scenarios,
+runs the worker in a subprocess, then removes only its owned root after handles close.
+Ctrl+C/launch errors also unwind cleanup; forced process termination/power loss cannot.
+A model server autostarted by this temporary root is stopped via its own pid file before
+cleanup; already-running shared servers have no pid file there and remain untouched.
+Run-local DOCS_DIR overrides application configuration to keep document writes isolated.
+No stack change or chat/model behavior change. README and AGENTS document retention and
+require the same temporary-state discipline for future ad hoc reviews.
+
+Eight lifecycle regressions pass, using real child-process SQLite handles for success,
+nonzero exit, retention and isolation, plus interruption/launch error and owned-server
+cleanup checks. Validation results follow after full offline and live smoke runs.
+
 ## Completed evaluation state cleanup (2026-10-22 Pacific)
 
 Confirmed review directories are independent STATE_DIR roots (database, logs, docs and

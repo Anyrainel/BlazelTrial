@@ -164,12 +164,23 @@ under `.state/scenarios/`. It loads 500 turns of synthetic Slack history (via `c
 the same path as live messages) and prints PASS/FAIL per scenario, plus a check that every
 call stayed within budget. It takes about 9 minutes and roughly 350 model calls.
 
+Automatically allocated state is deleted after success, failure or Ctrl+C, once the
+evaluation process has exited. Console results remain available. Use `--keep-state` to
+retain a fresh run's database, logs and `eval-results.json` for inspection, or
+`--state-dir PATH` to reuse and preserve a specific directory. Evaluation documents always
+use that run's `docs/`, regardless of the application's `DOCS_DIR`. Forced termination or
+power loss can bypass cleanup; remove those abandoned run directories manually.
+
 ```bash
 uv run python -m scenarios
 ```
 
 ```bash
 uv run python -m scenarios --only 1,4,5
+```
+
+```bash
+uv run python -m scenarios --only 1,4,5 --keep-state
 ```
 
 Offline unit tests (no network, fake models):
@@ -279,5 +290,6 @@ The artifact browser also shows system instructions and the last 500 usage-log e
 Evaluation coverage and limitations: see [docs/EVAL_REVIEW.md](docs/EVAL_REVIEW.md).
 The default scenario runner now includes cases 8 (cross-session corrections) and 9
 (event/amount distractors), requires real API counting/usage evidence, and saves
-`eval-results.json` in its state directory. Run `uv run python -m scenarios --only 5,8,9`
+`eval-results.json` in its state directory (retained with `--keep-state` or `--state-dir`).
+Run `uv run python -m scenarios --only 5,8,9`
 for the strengthened locality check and added cases.

@@ -114,4 +114,9 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
 - Log AI mistakes you catch and suggestions you reject in `docs/WORKLOG.md`; `NOTES.md` is
   the one-page deliverable summary.
 - Never commit secrets, `.env`, `.state/`, `web/node_modules`, or AI transcripts.
+- Evaluations use `python -m scenarios` with automatic temporary-state cleanup by default.
+  Use `--keep-state` or `--state-dir PATH` only when retaining evidence is intentional;
+  remove retained state after review. Ad hoc checks must likewise use a temporary directory
+  under `.state/scenarios/` and clean it in `finally` after closing child processes/DB handles.
+  Do not leave review scripts or screenshots in the live `.state/` root.
 - Done = `pytest` green + relevant scenario PASS + no budget violation in the call log.
