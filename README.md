@@ -253,3 +253,9 @@ programmatic queries. No delivery failure notification UI has been added. API ke
 runtime credentials are never included in these responses. Restart the API after pulling.
 The artifact browser also shows system instructions and the last 500 usage-log entries
 (filtered to the owner, with only usage fields exposed).
+
+Evaluation coverage and limitations: see [docs/EVAL_REVIEW.md](docs/EVAL_REVIEW.md).
+The default scenario runner now includes cases 8 (cross-session corrections) and 9
+(event/amount distractors), requires real API counting/usage evidence, and saves
+`eval-results.json` in its state directory. Run `uv run python -m scenarios --only 5,8,9`
+for the strengthened locality check and added cases.

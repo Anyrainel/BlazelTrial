@@ -466,3 +466,19 @@ excluding other owners' model calls. Browser QA verified real records and catego
 preview saved to .state/logs/memory-artifacts-ui.png. The UI also exposes the system prompt
 and last 500 usage-log entries, without credentials. Remaining delivery/crash limitations
 are explicit at /agent/status. No claim of cross-process locking or exactly-once Slack delivery.
+
+## Eval review (2026-10-22 Pacific)
+
+Reviewed scenarios, fixtures, retrieval script, offline model overrides and surface
+checks; findings in docs/EVAL_REVIEW.md. Assumption: synthetic history permitted by
+the assignment remains appropriate, but must be described separately from live
+conversation/model-write and real Slack delivery evidence. Strengthened locality,
+summary and budget checks; added live cross-session correction and distractor cases.
+No production model or memory implementation changes in this work; concurrent edits
+in those files are left untouched. Caught eval mistake: empty usage logs previously
+passed all() budget checks; now fail closed and check numeric usage/count method.
+Live review run: S5 PASS, S8 FAIL (B retained Elena after A saved Marco), S9 PASS;
+52 real Bonsai calls, max input 3981, no budget violation. Full offline suite:
+198 passed, one concurrent test_preferences failure (core.subagent_work missing).
+New eval checker regressions 2/2 pass; scoped ruff/diff checks pass. Original full
+acceptance scenarios not rerun. A second targeted run verifies final harness output.
