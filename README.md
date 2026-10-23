@@ -40,6 +40,23 @@ or `search_doc` to read them. Generate the corpus (4 docs of 20k–40k tokens, i
 uv run python scripts/gen_docs.py
 ```
 
+This creates `.state/docs/` on demand; the corpus is gitignored and must be generated
+for each fresh checkout (or configured `STATE_DIR` / `DOCS_DIR`). The four synthetic
+documents are `Q3-plan`, `brand-guidelines`, `eng-onboarding`, and `security-review`.
+With the configured Bonsai tokenizer they contain roughly 25k–29k tokens each.
+`Q3-plan` states Lumen's public launch date as **September 29, 2026**.
+Character-based context estimates are conservative and are not document token counts.
+
+Before submission, also:
+
+- Run the offline tests and the full live scenario suite; inspect its saved
+  `eval-results.json` and per-call usage log for failures or budget violations.
+- Verify scenario 1 in the actual main chat and Slack DM, then record the required
+  screen recording (at most two minutes). Configured tokens alone do not verify Slack setup.
+- Update `NOTES.md` to reflect the final implementation/results and fill in hours spent.
+- Package all unedited Claude Code and Codex transcripts separately, redacting API keys;
+  exclude them and runtime state from Git. Submit the repository with its Git history.
+
 ## Run the core
 
 One-shot call, the same entry point every surface uses (`thread_id` = a session id, `slack-dm`, or `slack-<channel ID>`):

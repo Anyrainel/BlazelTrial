@@ -20,7 +20,9 @@ class DocSpec:
     title: str
     sections: list[str]
     planted: dict[int, list[str]] = field(default_factory=dict)  # section index -> paragraphs
-    paragraphs_per_section: int = 11
+    # Leave headroom above 20k with the local model's tokenizer, rather than relying
+    # on the reader's conservative character-based context estimate.
+    paragraphs_per_section: int = 14
 
 
 _SUBJECTS = [

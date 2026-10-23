@@ -551,3 +551,30 @@ Final review verification: 199 pytest tests pass on rerun. Second live targeted 
 again S5 PASS, S8 FAIL, S9 PASS; 60 calls, max 4103 input, no budget violations;
 structured eval-results.json saved. Scoped ruff/diff checks pass. Full original
 scenario suite, strengthened S3 and S6 not live-rerun.
+
+
+## Required document corpus and preparation audit (2026-10-22 Pacific)
+
+Generated the missing main runtime corpus in `.state/docs/` using the existing
+script; runtime documents remain gitignored. Assumption: retain the deterministic
+synthetic fixtures and established launch fact rather than inventing a second corpus.
+Caught an existing generator mistake: character-based estimates claimed adequate
+sizes, but actual Bonsai tokenization put engineering onboarding at 19,788 tokens
+and security review at 19,957. Increased paragraphs per section from 11 to 14,
+leaving headroom: Q3-plan 28,879; brand-guidelines 25,241; eng-onboarding 25,162;
+security-review 25,405. All four load through the production document loader.
+Q3-plan retains the explicit September 29, 2026 Lumen public launch date.
+No stack decision changed.
+
+Preparation audit: configured local model/server paths exist and the server runs;
+Slack and provider credentials are present (values never printed). Both AI transcript
+directories exist; this does not verify completeness/redaction. Web production
+build passes, with the existing large-bundle warning. README now explains corpus
+creation for fresh checkouts and lists submission preparation. Remaining human
+items: update stale NOTES results/design and fill hours, export/redact all unedited
+transcripts, verify real Slack integration and capture the <=2-minute scenario-1 demo,
+and provide the repository with Git history. Token presence does not establish live
+Slack delivery. No synthetic history was seeded into the user's main conversation DB.
+
+Verification after resizing: 206 offline tests pass; ruff, format and diff checks pass.
+Live document scenarios run in isolated `.state/preparation-check-20261022`; results follow.
