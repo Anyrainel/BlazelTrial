@@ -601,3 +601,9 @@ Slack delivery. No synthetic history was seeded into the user's main conversatio
 
 Verification after resizing: 206 offline tests pass; ruff, format and diff checks pass.
 Live document scenarios run in isolated `.state/preparation-check-20261022`; results follow.
+
+Final live verification: S3 (substantive summary and launch-date recall after 100
+turns) PASS; S7 (LinkedIn post from Q3-plan with long history) PASS. 89 real Bonsai
+calls, maximum 4,550 input tokens, zero violations or preflight refusals; elapsed
+328 seconds. Structured report: `.state/preparation-check-20261022/eval-results.json`.
+The full nine-scenario suite and real Slack demo were not rerun in this audit.
