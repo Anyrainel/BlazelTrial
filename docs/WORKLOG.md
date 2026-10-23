@@ -833,3 +833,22 @@ index, upkeep and adapter receipt/delivery path. No new user turn or canned resp
 The explicit --resume-pending harness validates the latest human Slack text against
 the sole incomplete stored turn before recovery. Production code is unchanged.
 Recovered successfully and continued at 383; later checkpoint numbering is intact.
+
+Final live demo result: 520 real user posts, 520 generated replies, 520 completed
+adapter delivery receipts; all required checkpoints at exactly 20/350/450/501/520.
+S2 PASS: turn 501 recalled brass astronaut, violet umbrella, MOTH-7319 engraving,
+blue espresso tin from turn 20. S3 PASS: three-bullet summary at 350; September 29,
+2026 launch recalled at 450 after 100 turns. Both address cycles excluded from all
+memory grep paths; source messages soft-forgotten; turn 220 requested the address
+again instead of disclosing it. All four spelling probes and history recall PASS.
+S7 PASS at 520: 703 characters, three final-line hashtags, no links; verified the
+actual posted Slack text matches the generated reply through conversations.history.
+919 provider-reported model calls, maximum 6,384 input tokens, zero violations or
+preflight refusals. Read-only report: .state/scenarios/slack-live-demo/report.json.
+Transport evidence and failed-turn-382 error retained alongside it; no claim that
+the accelerated adapter envelopes are Socket Mode events. No failed turn hidden.
+Final offline suite: 230 tests PASS (38.19s); scoped ruff/format/diff checks PASS.
+Demo driver has exited; current-checkout Slack worker remains available. The reset
+backup is recoverable; live demo DB and real Slack conversation intentionally remain.
+Observed cosmetic issue left visible: Bonsai occasionally emits a closing think tag
+and repeats a sentence. No production/model change attempted during the demo.
