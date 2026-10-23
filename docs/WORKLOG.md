@@ -1,5 +1,12 @@
 # Work log
 
+## Notes readability pass (2026-10-23 Pacific)
+
+Condensed the NOTES.md design into shared core, context, counting, scoped memory, recall,
+forgetting and capabilities. Added the requested opening distinction between runtime
+`.state/docs/` (Hazel's documents) and repository `docs/` (development documentation).
+Documentation-only; git diff --check passes. No model calls or application tests needed.
+
 ## Deliverable notes refresh (2026-10-23 Pacific)
 
 Polished NOTES.md using the user's time estimates and reflections, checked against current

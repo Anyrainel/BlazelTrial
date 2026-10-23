@@ -1,34 +1,34 @@
 # NOTES
 
+All runtime files live in `.state/`. The `docs/` folder Hazel reads is `.state/docs/`;
+the repository-root `docs/` contains documentation produced during development.
+
 Implementation decisions and detailed validation: [docs/DECISIONS.md](docs/DECISIONS.md)
 and [docs/WORKLOG.md](docs/WORKLOG.md).
 
 ## Design
 
-- **One core:** `send(user_id, thread_id, text)` serves CLI, HTTP/web and Slack
-  (Socket Mode, DMs and explicit channel mentions). History ingestion uses the same pipeline.
-- **Token budgeting:** every live model request requires a successful provider token-count
-  endpoint call (Claude/Meta), or the local server's template/tokenizer endpoints. Oversized
-  requests are shrunk and counted again before inference; unavailable counting stops the
-  call. Provider-reported input usage, including cache reads/writes, is logged against the
-  configurable 8,000-token limit. Estimates help plan shrinking, but do not authorize live calls.
-- **Context:** stable instructions and tools precede a bounded rolling window of recent
-  history. The window moves in chunks to preserve prompt-cache reuse. Compaction keeps tool
-  calls paired with their returns; large completed results can be recovered through references.
-- **Memory:** SQLite holds LLM-managed, source-linked notes and versioned records categorized
-  as facts, preferences or tasks. Long-term records are shared across conversations; session
-  records stay local. Current preferences from both applicable scopes are always injected as
-  a size-capped standing-preferences block. Other memory is reached through tools.
-  `ask_memory` delegates recall to a bounded subagent with its own prompt and context. It
-  searches records, notes, document passages and a BM25 session-history index, with exact
-  text lookup and source reads for details that summaries may lose. Updates supersede records
-  so earlier preferences remain explainable.
-- **Forgetting:** the worker finds relevant sources, then deterministic code deletes derived
-  records, notes, saved outputs and index entries. Default soft forgetting flags original chat
-  messages: they remain visible to the user but are excluded from agent search, reads, replay
-  and note generation. Hard deletion is also available.
-- **Capabilities:** large documents are read in chunks and distilled into cached notes;
-  LinkedIn length, hashtag and link rules are validated in code.
+- **Shared core.** CLI, HTTP/web and Slack DMs/channel mentions all call
+  `send(user_id, thread_id, text)`. History ingestion follows the same path.
+- **Bounded context.** Each request combines stable instructions and tools with current
+  preferences and recent conversation history. History rolls forward in chunks to preserve
+  prompt-cache reuse, keeping tool calls and their results together.
+- **Count before calling.** Every live request is checked against the configurable 8,000-token
+  limit using provider count endpoints, or the local server's template/tokenizer endpoints.
+  Oversized requests are shortened and recounted; failed counting blocks inference.
+  Actual input usage, including cached tokens, is logged for every call.
+- **Scoped memory.** SQLite stores LLM-written notes and records classified as facts,
+  preferences or tasks, linked to their sources. Long-term records are shared across
+  conversations; session records stay local. Current preferences are always included in
+  context within size caps. Changes create new versions, preserving earlier preferences.
+- **Recall through tools.** `ask_memory` uses a subagent with its own prompt and context to
+  search records, notes, document passages and indexed session history. Exact text lookup
+  and source reads recover details that summaries may miss.
+- **Forget without erasing the conversation.** Soft forgetting preserves visible chat but
+  excludes flagged messages from every agent memory path. Derived memory, saved outputs and
+  index entries are deleted. Hard deletion is also available.
+- **Bounded capabilities.** Large documents are read in chunks and summarized into cached
+  notes. LinkedIn length, hashtag and link rules are enforced in code.
 
 ## Trade-offs
 
