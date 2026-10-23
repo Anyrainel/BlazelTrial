@@ -26,6 +26,14 @@ the interface. Generated source excerpts, document notes, user preferences and a
 errors are task evidence or operational feedback, not illustrative prompt prose. They remain.
 No provider/model selection, memory storage or budget enforcement changed.
 
-Validation: 206 offline tests pass. Live acceptance and budget results are recorded in
-`WORKLOG.md` when the run completes. No new string-matching prompt tests were added; existing
-behavior tests and real-model scenarios check the consequences of the rewrite.
+The initial live run passed 7/9 scenarios but exposed mixed spelling across a response and
+an old task being resumed; cross-session correction also failed. Clarified two general system
+rules: answer the current request and apply standing preferences throughout the response.
+The final focused rerun passed preference changes (S4), isolation (S5) and cross-session
+correction (S8). This is not a clean full-suite run on the final wording.
+
+Validation: 206 offline tests, ruff and formatting pass. Initial live run: 213 calls, maximum
+7,494 input tokens; final focused rerun: 65 calls, maximum 3,920; zero sent-call budget
+violations in either. State and structured reports are under `.state/prompt-review-20261022`
+and `.state/prompt-review-recheck-20261022`. No new string-matching prompt tests were added;
+existing behavior tests and real-model scenarios check the consequences of the rewrite.

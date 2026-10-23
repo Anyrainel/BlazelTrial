@@ -11,8 +11,18 @@ recipient exception. Preserved source verification, version history, local scope
 direct drafting, output limits and budget enforcement. Existing document-discovery work is
 preserved. No stack decision or new behavioral test scaffolding needed.
 
-206 offline tests pass; initial scoped ruff and diff checks pass. Full live local-model
-scenarios are running in .state/prompt-review-20261022; final results to follow.
+AI mistake caught: the first cleanup did not make whole-response preference adherence and
+current-task focus explicit enough. Live S4 saved the preference but mixed spelling in the
+next draft and resumed an old task; S8 also repeated a stale answer. Added two general system
+rules: answer the current request and apply standing preferences throughout the response.
+No scenario examples were reintroduced.
+
+Final verification: 206 offline tests pass (35.60s); full ruff, format and diff checks pass.
+Initial full live Bonsai run: S1/S2/S3/S5/S6/S7/S9 PASS, S4/S8 FAIL; 213 calls, maximum 7,494
+input tokens, zero violations. Final focused run after clarification: S4/S5/S8 PASS; 65 calls,
+maximum 3,920 input tokens, zero violations. Structured reports in
+.state/prompt-review-20261022 and .state/prompt-review-recheck-20261022. Final wording has
+not had another full nine-scenario run; distinguish targeted recovery from full-suite success.
 
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
