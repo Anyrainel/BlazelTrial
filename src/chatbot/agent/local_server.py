@@ -76,6 +76,7 @@ def server_command(settings: Settings) -> list[str]:
         "-ngl", "99", "-fa", "on",
         "-c", str(settings.local_context), "-np", str(settings.local_parallel),
         "-n", "16384", "--reasoning", settings.local_reasoning,
+        "--reasoning-effort", settings.local_reasoning_effort,
         "--jinja", "--temp", "1.0", "--top-p", "0.95", "--top-k", "20", "--min-p", "0.05",
         "--host", host, "--port", str(port),
     ]  # fmt: skip

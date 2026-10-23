@@ -105,14 +105,16 @@ def build_model(settings: Settings, raw: Model | None = None) -> BudgetedModel:
     )
 
 
-def mechanical_task_settings(settings: Settings, *, max_tokens: int) -> dict:
-    """Model settings for unattended summarizing/drafting agents (notes, document notes, posts).
+def mechanical_task_settings(settings: Settings, *, max_tokens: int, cache: bool = False) -> dict:
+    """Model settings for unattended summarizing/drafting agents (notes, document notes, posts)
+    and the memory workers.
 
-    No prompt cache (every prompt is unique). On the local reasoning model, thinking is off and
-    output is capped: left on, Bonsai spent the whole 16k output limit reasoning about a
-    summary (live: ~10k tokens per note, runs of minutes, then "token limit exceeded").
+    No prompt cache unless `cache` (multi-step agents resend earlier steps; one-shot prompts are
+    unique). On the local reasoning model, thinking is off and output is capped: left on, Bonsai
+    spent the whole 16k output limit reasoning about a summary (live: ~10k tokens per note, runs
+    of minutes, then "token limit exceeded").
     """
-    out: dict = {"anthropic_cache": False}
+    out: dict = {"anthropic_cache": cache}
     if effective_settings(settings).llm_provider == "local":
         out["max_tokens"] = max_tokens
         out["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}

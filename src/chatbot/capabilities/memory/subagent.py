@@ -29,7 +29,7 @@ from pydantic_ai.usage import UsageLimits
 from sqlmodel import col, select
 
 from chatbot.agent.budget import call_context
-from chatbot.agent.models import build_model
+from chatbot.agent.models import build_model, mechanical_task_settings
 from chatbot.config import get_settings
 from chatbot.memory import forget as forgetting
 from chatbot.memory import grep as grepping
@@ -438,7 +438,7 @@ def get_worker(mode: Mode) -> Agent[WorkerDeps, MemoryAnswer | WorkResult]:
         instructions=instructions,
         # Each step of one task resends the previous steps: automatic caching makes those
         # reads (measured: 604k uncached subagent input tokens in one full scenario run).
-        model_settings={"anthropic_cache": True},
+        model_settings=mechanical_task_settings(get_settings(), max_tokens=1500, cache=True),
     )
     for tool in _TOOLS[mode]:
         agent.tool(tool)

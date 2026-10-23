@@ -14,7 +14,7 @@ from pydantic_ai import RunContext
 from chatbot.capabilities.memory import subagent
 from chatbot.capabilities.registry import capability
 from chatbot.memory import forget as forgetting
-from chatbot.memory import records
+from chatbot.memory import records, refs
 from chatbot.memory.records import MemoryAccessError, MemoryCaller
 
 
@@ -74,7 +74,8 @@ async def update_memory(
 async def forget(ctx: RunContext, what: str) -> str:
     """Forget something the user asked to forget, from every conversation: messages,
     memory, summaries, saved outputs. Display-only chat originals may remain depending on
-    configuration. Memory finds every place and wording; do not search first.
+    configuration. Memory finds every place and wording; do not search first. For the whole
+    conversation use `forget_session`.
 
     Args:
         what: The information to forget, in the user's words.
@@ -92,6 +93,29 @@ async def forget(ctx: RunContext, what: str) -> str:
         forgetting.compact_storage()
     note = "Do not repeat the forgotten information in your reply or in any message."
     return f"{subagent.render_work(outcome)}\n{note}"
+
+
+def forget_session(ctx: RunContext) -> str:
+    """Forget everything said in this conversation: its messages and everything derived from
+    them (memory records, summaries, saved outputs). Use when the user asks to forget the
+    whole conversation or session; use `forget` for specific information.
+    """
+    ref = refs.parse(getattr(ctx.deps, "current_msg_ref", None) or "")
+    report = forgetting.forget_session(
+        ctx.deps.user_id,
+        ctx.deps.thread_id,
+        keep_message_id=ref.id if ref and ref.type == "msg" else None,
+    )
+    parts = {
+        "messages": report.messages,
+        "records": report.records,
+        "notes": report.notes,
+        "saved outputs": report.tool_outputs + report.checkpoints,
+        "sent messages": report.outbound,
+    }
+    done = ", ".join(f"{n} {name}" for name, n in parts.items() if n) or "nothing stored"
+    note = "Do not repeat anything from this conversation that was forgotten."
+    return f"status: erased\nsummary: Forgot this conversation ({done}).\n{note}"
 
 
 def read_memory(ctx: RunContext, ref: str) -> str:
@@ -115,4 +139,5 @@ CAPABILITY = capability(
     update_memory,
     read_memory,
     forget,
+    forget_session,
 )

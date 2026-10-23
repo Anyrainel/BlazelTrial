@@ -14,6 +14,8 @@ Deterministic and user-wide (every session), serialized with all other memory wr
 - episode notes containing a value or covering a forgotten message are deleted;
 - saved tool outputs, checkpoints, outbound messages and legacy fact/summary rows containing a
   value are deleted;
+- `forget_session` applies this to one whole session: all its messages (but the current request),
+  its session-store records, saved outputs, checkpoints, sent messages and summaries;
 - FTS indexes are optimized, the WAL is truncated and the database is VACUUMed, so the deleted
   bytes are gone from disk too.
 No separate list of forgotten values is persisted.
@@ -40,6 +42,7 @@ from chatbot.memory.models import (
     RecordSource,
     Role,
     SlackDelivery,
+    Store,
     Summary,
     ToolOutput,
 )
@@ -106,18 +109,21 @@ def forget_values(
     message_ids: Iterable[int] = (),
     compact: bool = True,
     mode: str | None = None,
+    session_id: str | None = None,
 ) -> ForgetReport:
-    """Forget `values` and whole turns of `message_ids` using the configured mode."""
+    """Forget `values` and whole turns of `message_ids` using the configured mode. With
+    `session_id`, also everything stored for that session (see `forget_session`)."""
     mode = mode or get_settings().memory_forget_mode
     if mode not in {"soft", "hard"}:
         raise ValueError("forget mode must be soft or hard")
     values, rejected = clean_values(values)
     explicit = set(message_ids)
     report = ForgetReport(rejected=rejected)
-    if not values and not explicit:
+    if not values and not explicit and not session_id:
         return report
     hit = matcher(values)
     matches = lambda text: bool(text) and bool(hit.search(text))  # noqa: E731
+    in_session = lambda row_session: bool(session_id) and row_session == session_id  # noqa: E731
 
     with _write_lock, session() as s:
         # 1. messages: flagged in soft mode (the chat keeps them), deleted in hard mode
@@ -187,7 +193,8 @@ def forget_values(
                 if refs.parse(x.ref) and refs.parse(x.ref).type in refs.EVIDENCE
             ]
             orphaned = evidence and all(x.ref in gone_refs for x in evidence)
-            if matches(r.text) or matches(r.key) or orphaned:
+            own = r.store == Store.SESSION and in_session(r.session_id)
+            if matches(r.text) or matches(r.key) or orphaned or own:
                 doomed.add(r.id)
         for r in recs:
             for x in sources[r.id]:
@@ -220,7 +227,7 @@ def forget_values(
             covered = set(
                 s.exec(select(NoteSource.message_id).where(NoteSource.note_id == n.id)).all()
             )
-            if matches(n.text) or covered & gone_ids:
+            if matches(n.text) or covered & gone_ids or in_session(n.session_id):
                 for ns in s.exec(select(NoteSource).where(NoteSource.note_id == n.id)).all():
                     s.delete(ns)
                 s.flush()
@@ -234,14 +241,14 @@ def forget_values(
             (Checkpoint, "checkpoints", "text"),
         ):
             for row in s.exec(select(model).where(model.user_id == user_id)).all():
-                if matches(getattr(row, field_name)):
+                if matches(getattr(row, field_name)) or in_session(row.session_id):
                     s.delete(row)
                     setattr(report, attr, getattr(report, attr) + 1)
         threads = {m.thread_id for m in msgs}
         for row in s.exec(
             select(OutboundMessage).where(col(OutboundMessage.thread_id).in_(threads))
         ).all():
-            if matches(row.text) or matches(row.recipient):
+            if matches(row.text) or matches(row.recipient) or in_session(row.thread_id):
                 s.delete(row)
                 report.outbound += 1
         for row in s.exec(select(Fact).where(Fact.user_id == user_id)).all():
@@ -249,7 +256,7 @@ def forget_values(
                 s.delete(row)
                 report.legacy += 1
         for row in s.exec(select(Summary).where(col(Summary.thread_id).in_(threads))).all():
-            if matches(row.text):
+            if matches(row.text) or in_session(row.thread_id):
                 s.delete(row)
                 report.legacy += 1
 
@@ -261,6 +268,27 @@ def forget_values(
     if compact and report.total():
         compact_storage()
     return report
+
+
+def forget_session(
+    user_id: str,
+    session_id: str,
+    *,
+    keep_message_id: int | None = None,
+    compact: bool = True,
+    mode: str | None = None,
+) -> ForgetReport:
+    """Forget everything said in one session, with no value to search for. The turn of
+    `keep_message_id` (the request to forget, still being answered) is left alone."""
+    with session() as s:
+        msgs = s.exec(
+            select(Message).where(Message.user_id == user_id, Message.thread_id == session_id)
+        ).all()
+    keep_turns = {m.turn for m in msgs if m.id == keep_message_id}
+    ids = [m.id for m in msgs if m.turn not in keep_turns]
+    return forget_values(
+        user_id, [], message_ids=ids, compact=compact, mode=mode, session_id=session_id
+    )
 
 
 def _first_kept(recs, rid, doomed, *, back: bool):

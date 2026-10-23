@@ -704,3 +704,16 @@ current checkout from frozen snapshot launchers. New offline listener-wiring tes
 checks the actual Socket Mode listener passes the status client into handle_event.
 No model inference scenario needed for this runtime/observability fix.
 Validation result: 215 offline tests pass; scoped ruff and git diff --check pass. Current worker connected and left running; startup source path confirmed in .state/logs/slack-current.err.log.
+
+### 2026-10-22 - session-wide forget was slow and incomplete
+Live "Forget everything I said in this session." took minutes across 5 worker runs:
+Bonsai defaulted to reasoning effort xhigh with no output cap in the memory workers
+(5-10k output tokens per run), and a 40-message session needs dozens of `erase` steps
+against an 8-step cap (6 of 41 messages erased, reply said "most").
+Changes: `LOCAL_REASONING_EFFORT` (default low) passed to llama-server; memory workers use
+`mechanical_task_settings(cache=True)` (thinking off, max_tokens 1500); new deterministic
+`forget_session()` tool backed by `forget.forget_session` (flags the whole thread, deletes
+its session records, notes, outputs, checkpoints, summaries, sent messages; keeps the
+requesting turn). Re-timed on 40 seeded messages with the real model: 1.5-2.7s, 0 worker
+steps, 40/42 messages flagged (request + reply kept). Note: in `slack-dm` (one endless
+thread) "this session" means the whole DM history.

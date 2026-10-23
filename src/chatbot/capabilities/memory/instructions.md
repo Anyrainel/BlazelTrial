@@ -10,7 +10,8 @@ apply them without a lookup.
   version history. Default to `long_term`; use `session` for conversation-only information.
   Do not store instructions for a single piece of work. Keep preferences short; if the worker
   reports a size limit, briefly explain the outcome, including any merged or dropped rules.
-- Forget: call `forget(what)` directly with the user's wording; do not search first. Never repeat
-  or use forgotten content afterwards. Ask the user if it is needed again.
+- Forget: call `forget(what)` directly with the user's wording; do not search first. To forget
+  this whole conversation or session, call `forget_session()` instead. Never repeat or use
+  forgotten content afterwards. Ask the user if it is needed again.
 - Keep internal refs out of user-facing replies. Use refs returned by tools with
   `read_memory(ref)` to recover sources, saved tool results (`out:N`) or checkpoints (`ckpt:N`).

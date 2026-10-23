@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     local_context: int = 65536  # total KV context, split across the parallel slots
     local_parallel: int = 2
     local_reasoning: Literal["on", "off", "auto"] = "auto"
+    # Bonsai's chat template accepts xhigh (its default), medium and low when thinking is on.
+    local_reasoning_effort: Literal["default", "low", "medium", "xhigh"] = "low"
     local_start_timeout: float = 180.0
 
     # Hard cap on input tokens (incl. cached) for every single model request.

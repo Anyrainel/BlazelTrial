@@ -143,3 +143,100 @@ def test_existing_databases_get_the_flag_column(tmp_path):
     _add_missing_columns(engine)  # idempotent
     with engine.connect() as conn:
         assert conn.exec_driver_sql("SELECT text, forgotten FROM message").all() == [("kept", 0)]
+
+
+# --- forgetting a whole session: deterministic, no value to search for ----------------------
+
+
+def seed_two_sessions():
+    for text in ("We are staying at the blue house.", "Dana is my manager."):
+        core.ingest("me", "A", text, reply="Noted.")
+    core.ingest("me", "B", "Unrelated: I like tea.", reply="Good choice.")
+    a_first = store.thread_messages("A")[0]
+    b_first = store.thread_messages("B")[0]
+    a, b = MemoryCaller("me", "A"), MemoryCaller("me", "B")
+    made = {
+        "a_session": records.write(
+            a,
+            store="session",
+            kind="fact",
+            key="stay",
+            text="Blue house",
+            sources=[refs.msg(a_first.id)],
+        ),
+        "b_session": records.write(
+            b,
+            store="session",
+            kind="fact",
+            key="drink",
+            text="Tea",
+            sources=[refs.msg(b_first.id)],
+        ),
+        "a_only": records.write(
+            a,
+            store="long_term",
+            kind="fact",
+            key="manager",
+            text="Dana",
+            sources=[refs.msg(a_first.id)],
+        ),
+        "b_only": records.write(
+            b,
+            store="long_term",
+            kind="fact",
+            key="tea",
+            text="Likes tea",
+            sources=[refs.msg(b_first.id)],
+        ),
+        "a_out": records.save_tool_output(a, "call-a", "ask_memory", "answer from A"),
+        "b_out": records.save_tool_output(b, "call-b", "ask_memory", "answer from B"),
+    }
+    return {k: getattr(v, "ref", v) for k, v in made.items()}  # records are views, outputs refs
+
+
+def test_forgetting_a_session_flags_all_its_messages_and_nothing_else():
+    made = seed_two_sessions()
+    report = forget.forget_session("me", "A")
+    shown = {t: [m.forgotten for m in store.thread_messages(t)] for t in ("A", "B")}
+    assert shown == {"A": [True] * 4, "B": [False, False]}
+    assert report.messages == 4 and report.records == 2 and report.tool_outputs == 1
+    for gone in ("a_session", "a_only", "a_out"):
+        with pytest.raises(MemoryAccessError):
+            records.read(MemoryCaller("me", "A"), made[gone])
+    for kept in ("b_session", "b_only", "b_out"):
+        records.read(MemoryCaller("me", "B"), made[kept])
+
+
+def test_forgetting_a_session_keeps_the_turn_that_asked_for_it():
+    core.ingest("me", "A", "My locker code is 5-17-30.", reply="Noted.")
+    core.ingest("me", "A", "Forget everything I said in this session.")
+    request = store.thread_messages("A")[-1]
+    # a session record written while answering the request cites it, so only scope can remove it
+    note = records.write(
+        CALLER,
+        store="session",
+        kind="fact",
+        key="locker",
+        text="Locker code",
+        sources=[refs.msg(request.id)],
+    )
+    report = forget.forget_session("me", "A", keep_message_id=request.id)
+    assert report.messages == 2 and report.records == 1
+    with pytest.raises(MemoryAccessError):
+        records.read(CALLER, note.ref)
+    assert [m.forgotten for m in store.thread_messages("A")] == [True, True, False]
+
+
+def test_forgetting_an_empty_session_does_nothing():
+    assert forget.forget_session("me", "nope").total() == 0
+
+
+def test_the_model_forgets_a_whole_session_with_one_tool_call_and_no_worker_run():
+    seed_two_sessions()
+    chat = build_model(get_settings(), raw=scripted([("forget_session", {})], "Done."))
+    with get_agent().override(model=chat):  # no worker override: the memory worker is not used
+        reply = core.send("me", "A", "Forget everything I said in this session.")
+    assert reply == "Done."
+    forgotten = [m.forgotten for m in store.thread_messages("A")]
+    assert forgotten == [True] * 4 + [False, False]  # earlier turns gone; request and reply kept
+    assert [m.forgotten for m in store.thread_messages("B")] == [False, False]

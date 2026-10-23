@@ -97,6 +97,18 @@ def test_command_serves_llm_model_name(tmp_path):
     assert cmd[cmd.index("--port") + 1] == "1234"
 
 
+def test_command_passes_reasoning_effort(tmp_path):
+    settings = _settings(
+        tmp_path, 1234, local_server_bin=tmp_path / "s", local_model_path=tmp_path / "m"
+    )
+    cmd = local_server.server_command(settings)
+    assert cmd[cmd.index("--reasoning-effort") + 1] == "low"
+    cmd = local_server.server_command(
+        settings.model_copy(update={"local_reasoning_effort": "xhigh"})
+    )
+    assert cmd[cmd.index("--reasoning-effort") + 1] == "xhigh"
+
+
 @pytest.fixture
 def fresh_verdict(monkeypatch):
     monkeypatch.setattr(models, "_local_unavailable", {})
@@ -153,3 +165,10 @@ def test_mechanical_tasks_run_without_thinking_only_on_the_local_model(tmp_path,
     assert out["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
     claude = local.model_copy(update={"llm_provider": "anthropic"})
     assert models.mechanical_task_settings(claude, max_tokens=900) == {"anthropic_cache": False}
+
+
+def test_mechanical_settings_can_keep_the_prompt_cache(tmp_path, fresh_verdict):
+    claude = _settings(tmp_path, 1).model_copy(update={"llm_provider": "anthropic"})
+    assert models.mechanical_task_settings(claude, max_tokens=900, cache=True) == {
+        "anthropic_cache": True
+    }
