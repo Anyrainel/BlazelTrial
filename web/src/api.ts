@@ -19,12 +19,11 @@ export const send = (threadId: string, text: string) =>
     body: JSON.stringify({ thread_id: threadId, text }),
   }).then(json<{ reply: string }>);
 
-export type Inventory = {
-  system_instructions: string;
-  categories: { id: string; label: string; count: number }[];
-  files: string[];
-  capabilities: { name: string; description: string; instructions: string }[];
-};
+export type Inventory = { categories: { id: string; label: string; count: number }[] };
+export type DocFile = { name: string; bytes: number; modified: number };
+export type DocView = { name: string; text: string; truncated: boolean };
+export const docs = () => fetch("/agent/docs").then(json<DocFile[]>);
+export const doc = (name: string) => fetch(`/agent/docs/${encodeURIComponent(name)}`).then(json<DocView>);
 export type Artifact = Record<string, string | number | boolean | null>;
 export type ArtifactPage = { items: Artifact[]; total: number; offset: number; limit: number };
 export const inventory = () => fetch("/agent/inventory").then(json<Inventory>);

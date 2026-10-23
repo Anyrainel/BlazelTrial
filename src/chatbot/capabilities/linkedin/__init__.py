@@ -19,6 +19,8 @@ from chatbot.agent.models import build_model, mechanical_task_settings
 from chatbot.capabilities.linkedin import validator
 from chatbot.capabilities.registry import capability
 from chatbot.config import get_settings
+from chatbot.memory.db import session
+from chatbot.memory.models import GeneratedPost
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,9 @@ async def write_linkedin_post(ctx: RunContext, brief: str) -> str:
         logger.warning("LinkedIn writer never met the length rule; trimming its last draft")
         draft = seen.get("last") or LinkedInPost(body=brief, hashtags=[])
     post = validator.assemble(draft.body, draft.hashtags)
+    with session() as s:
+        s.add(GeneratedPost(thread_id=ctx.deps.thread_id, text=post))
+        s.commit()
     ctx.deps.outputs["reply"] = post
     return f"Final post (shown to the user verbatim):\n\n{post}"
 

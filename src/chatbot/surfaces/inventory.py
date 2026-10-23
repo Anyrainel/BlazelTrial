@@ -29,7 +29,8 @@ TABLES = {
     "document_refs": (m.DocRef, "Opened documents"),
     "outputs": (m.ToolOutput, "Saved tool outputs"),
     "checkpoints": (m.Checkpoint, "Task checkpoints"),
-    "outbound": (m.OutboundMessage, "Mock messages"),
+    "outbound": (m.OutboundMessage, "Messages"),
+    "posts": (m.GeneratedPost, "LinkedIn posts"),
     "deliveries": (m.SlackDelivery, "Slack delivery receipts"),
     "legacy_facts": (m.Fact, "Legacy facts"),
     "legacy_summaries": (m.Summary, "Legacy summaries"),
@@ -173,6 +174,34 @@ def items(
             for row in rows
         ]
     return {"items": data, "total": total, "offset": offset, "limit": limit}
+
+
+DOC_VIEW_CHARS = 20_000
+
+
+def _doc_files() -> dict[str, Any]:
+    folder = get_settings().docs_path
+    return {p.name: p for p in sorted(folder.iterdir()) if p.is_file()} if folder.is_dir() else {}
+
+
+@router.get("/docs")
+def docs() -> list[dict[str, Any]]:
+    """The documents in the workspace docs folder."""
+    return [
+        {"name": name, "bytes": p.stat().st_size, "modified": p.stat().st_mtime}
+        for name, p in _doc_files().items()
+    ]
+
+
+@router.get("/docs/{name}")
+def doc(name: str) -> dict[str, Any]:
+    """One document's start (bounded); only names listed by `/docs` resolve."""
+    path = _doc_files().get(name)
+    if path is None:
+        raise HTTPException(404, "Unknown document")
+    with path.open(encoding="utf-8", errors="replace") as stream:
+        text = stream.read(DOC_VIEW_CHARS + 1)
+    return {"name": name, "text": text[:DOC_VIEW_CHARS], "truncated": len(text) > DOC_VIEW_CHARS}
 
 
 @router.get("/status")

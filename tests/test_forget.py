@@ -15,7 +15,15 @@ from chatbot.memory import messages as store
 from chatbot.memory import records, refs
 from chatbot.memory.db import get_engine, session
 from chatbot.memory.forget import forget_values
-from chatbot.memory.models import EpisodeNote, Fact, FactKind, MemoryRecord, OutboundMessage, Scope
+from chatbot.memory.models import (
+    EpisodeNote,
+    Fact,
+    FactKind,
+    GeneratedPost,
+    MemoryRecord,
+    OutboundMessage,
+    Scope,
+)
 from chatbot.memory.records import MemoryCaller
 from scenarios.fixtures.slack_history import generate
 from tests.fakes import scripted, worker_answering
@@ -89,6 +97,7 @@ def seed_derived_state() -> dict:
     records.save_checkpoint(DM, "run-x", f"Goal: send address {ADDRESS}")
     with session() as s:
         s.add(OutboundMessage(thread_id="slack-dm", recipient="Sam", text=f"I'm at {ADDRESS}"))
+        s.add(GeneratedPost(thread_id="slack-dm", text=f"Visit us at {ADDRESS}! #Launch"))
         s.add(
             Fact(
                 user_id="me",
@@ -142,6 +151,7 @@ def test_forget_removes_the_value_everywhere_including_disk():
         # The note over the forgotten turn was deleted, then rebuilt from the remaining messages.
         assert len(s.exec(EpisodeNote.__table__.select()).all()) == notes_before
         assert s.exec(OutboundMessage.__table__.select()).all() == []
+        assert s.exec(GeneratedPost.__table__.select()).all() == []
 
 
 def test_a_message_after_forgetting_cannot_leak_the_address():

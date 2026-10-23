@@ -11,7 +11,7 @@ import {
 import * as api from "./api";
 import { AGENT_NAME, Brand } from "./Brand";
 import { Login, loadSession, saveSession } from "./Login";
-import { Memory } from "./Memory";
+import { Browser, TABS, type TabId } from "./Browser";
 
 const toThreadMessage = (m: api.Msg, i: number): ThreadMessageLike => ({
   id: `${i}`,
@@ -105,9 +105,10 @@ function Chat({ threadId, onSent }: { threadId: string; onSent: () => void }) {
 }
 
 function Workspace({ onLogout }: { onLogout: () => void }) {
-  const [view, setView] = useState<"chat" | "memory">("chat");
+  const [view, setView] = useState<"chat" | TabId>("chat");
   const [threads, setThreads] = useState<api.Thread[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
+  const [mode, setMode] = useState<"chat" | "slack">("chat");
 
   const refresh = useCallback(() => {
     api.listThreads().then(setThreads).catch(() => setThreads([]));
@@ -117,6 +118,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
   const startNew = useCallback(async () => {
     setCurrent((await api.newThread()).id);
+    setMode("chat");
     setView("chat");
   }, []);
 
@@ -124,31 +126,56 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     if (current === null) void startNew();
   }, [current, startNew]);
 
-  const visible =
+  const all =
     current && !threads.some((t) => t.id === current)
       ? [{ id: current, kind: "session", title: "New chat", updated_at: "" }, ...threads]
       : threads;
+  const inMode = (m: "chat" | "slack") => all.filter((t) => (t.kind === "slack") === (m === "slack"));
+  const visible = inMode(mode);
+  const open = all.find((t) => t.id === current && visible.includes(t));
+
+  const switchMode = (m: "chat" | "slack") => {
+    setMode(m);
+    setView("chat");
+    const first = inMode(m)[0];
+    if (!all.some((t) => t.id === current && inMode(m).includes(t)) && first) setCurrent(first.id);
+  };
 
   return (
     <div className="app">
       <aside className="sidebar">
         <Brand />
-        <button className="new-chat" aria-pressed={view === "memory"} onClick={() => setView("memory")}>Memory &amp; artifacts</button>
-        <button className="new-chat" onClick={startNew}>
-          + New chat
-        </button>
+        <div className="view-tabs" role="tablist" aria-label="Sections">
+          {(["chat", "memory", "messages", "docs"] as const).map((id) => (
+            <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)}>
+              {id === "chat" ? "Conversations" : TABS[id].label}
+            </button>
+          ))}
+        </div>
+        <div className="mode-switch" role="tablist" aria-label="Conversation source">
+          {(["chat", "slack"] as const).map((m) => (
+            <button key={m} role="tab" aria-selected={mode === m} onClick={() => switchMode(m)}>
+              {m === "chat" ? "Chat" : "Slack"}
+            </button>
+          ))}
+        </div>
+        {mode === "chat" && (
+          <button className="new-chat" onClick={startNew}>
+            + New chat
+          </button>
+        )}
         <nav>
           {visible.map((t) => (
             <button
               key={t.id}
-              className={`thread-link${t.id === current ? " active" : ""}`}
+              className={`thread-link${view === "chat" && t.id === current ? " active" : ""}`}
               onClick={() => { setCurrent(t.id); setView("chat"); }}
               title={t.title}
             >
-              <span className="thread-kind">{t.kind === "slack" ? "Slack" : "Chat"}</span>
               {t.title}
             </button>
           ))}
+          {visible.length === 0 && <p className="nav-empty">No Slack conversations yet.</p>}
         </nav>
         <div className="account">
           <span className="account-name">Test user</span>
@@ -158,7 +185,11 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         </div>
       </aside>
       <main className="main">
-        {view === "memory" ? <Memory /> : current && <Chat key={current} threadId={current} onSent={refresh} />}
+        {view === "chat"
+          ? open
+            ? <Chat key={open.id} threadId={open.id} onSent={refresh} />
+            : <div className="empty"><p>Select a conversation.</p></div>
+          : <Browser key={view} tab={view} />}
       </main>
     </div>
   );

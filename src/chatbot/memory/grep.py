@@ -18,6 +18,7 @@ from chatbot.memory.forget import matcher
 from chatbot.memory.models import (
     Checkpoint,
     EpisodeNote,
+    GeneratedPost,
     MemoryRecord,
     Message,
     OutboundMessage,
@@ -173,6 +174,20 @@ def find(
                     )
                     for o in sent
                     if pattern.search(o.text) or pattern.search(o.recipient)
+                ],
+            )
+            add(
+                "outbound",
+                [
+                    Mention(
+                        f"post:{p.id}",
+                        "outbound",
+                        "LinkedIn post",
+                        p.created_at,
+                        _excerpt(p.text, pattern),
+                    )
+                    for p in s.exec(select(GeneratedPost)).all()
+                    if pattern.search(p.text)
                 ],
             )
 

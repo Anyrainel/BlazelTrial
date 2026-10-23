@@ -12,8 +12,8 @@ Deterministic and user-wide (every session), serialized with all other memory wr
 - memory records containing a value, or whose original evidence was all forgotten, are deleted;
   other cited excerpts containing it are dropped; version links skip deleted versions;
 - episode notes containing a value or covering a forgotten message are deleted;
-- saved tool outputs, checkpoints, outbound messages and legacy fact/summary rows containing a
-  value are deleted;
+- saved tool outputs, checkpoints, outbound messages, LinkedIn posts and legacy fact/summary
+  rows containing a value are deleted;
 - `forget_session` applies this to one whole session: all its messages (but the current request),
   its session-store records, saved outputs, checkpoints, sent messages and summaries;
 - FTS indexes are optimized, the WAL is truncated and the database is VACUUMed, so the deleted
@@ -35,6 +35,7 @@ from chatbot.memory.models import (
     Checkpoint,
     EpisodeNote,
     Fact,
+    GeneratedPost,
     MemoryRecord,
     Message,
     NoteSource,
@@ -250,6 +251,12 @@ def forget_values(
         ).all():
             if matches(row.text) or matches(row.recipient) or in_session(row.thread_id):
                 s.delete(row)
+                report.outbound += 1
+        for post in s.exec(
+            select(GeneratedPost).where(col(GeneratedPost.thread_id).in_(threads))
+        ).all():
+            if matches(post.text) or in_session(post.thread_id):
+                s.delete(post)
                 report.outbound += 1
         for row in s.exec(select(Fact).where(Fact.user_id == user_id)).all():
             if matches(row.text):

@@ -5,7 +5,13 @@ from fastapi.testclient import TestClient
 from chatbot import core
 from chatbot.config import get_settings
 from chatbot.memory.db import session
-from chatbot.memory.models import MemoryRecord, OutboundMessage, RecordKind, Store
+from chatbot.memory.models import (
+    GeneratedPost,
+    MemoryRecord,
+    OutboundMessage,
+    RecordKind,
+    Store,
+)
 from chatbot.surfaces.http import app
 
 
@@ -48,6 +54,24 @@ def test_inventory_filters_owners_and_includes_versions_and_mock_messages():
     assert c.get("/agent/inventory/records?limit=10000").status_code == 422
     for category in inventory.json()["categories"]:
         assert c.get(f"/agent/inventory/{category['id']}").status_code == 200
+
+
+def test_posts_are_owner_filtered_and_docs_are_listed_and_bounded():
+    core.ingest("me", "A", "Hello", "ok")
+    core.ingest("someone-else", "B", "Private", "ok")
+    with session() as s:
+        s.add(GeneratedPost(thread_id="A", text="Visible post #Launch"))
+        s.add(GeneratedPost(thread_id="B", text="Hidden post"))
+        s.commit()
+    folder = get_settings().docs_path
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "notes.md").write_text("x" * 25_000, encoding="utf-8")
+    c = TestClient(app)
+    assert c.get("/agent/inventory/posts").json()["total"] == 1
+    assert [d["name"] for d in c.get("/agent/docs").json()] == ["notes.md"]
+    body = c.get("/agent/docs/notes.md").json()
+    assert len(body["text"]) == 20_000 and body["truncated"] is True
+    assert c.get("/agent/docs/missing.md").status_code == 404
 
 
 def test_status_exposes_delivery_limits_without_credentials():

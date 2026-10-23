@@ -142,6 +142,15 @@ class OutboundMessage(SQLModel, table=True):
     idempotency_key: str | None = Field(default=None, unique=True)
 
 
+class GeneratedPost(SQLModel, table=True):
+    """A LinkedIn post the agent wrote for the user (shown verbatim in the UI)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    thread_id: str = Field(index=True)
+    text: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class Store(StrEnum):
     SESSION = "session"
     LONG_TERM = "long_term"
