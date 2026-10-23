@@ -1,0 +1,53 @@
+INFO:chatbot.surfaces.slack_app:Slack worker source=F:\Codes\BlazelTrial\src\chatbot\surfaces\slack_app.py; temporary thread status enabled
+INFO:slack_bolt.AsyncApp:A new session (s_132631615829) has been established
+INFO:slack_bolt.AsyncApp:Bolt app is running!
+                 pydantic-ai v2.57.0 • Python 3.13.13
+      / \
+     /   \       model: anthropic:claude-sonnet-5-5 • tools: 10 • capabilities: 1
+   /___.___\
+  /    |    \    observability: off — see every model and tool call live, with cost
+/      |      \    set it up free with Logfire and a GitHub login: https://pydantic.dev/ai-setup.md
+`---.._|_..---'    or use any OpenTelemetry backend: https://pydantic.dev/docs/ai/logfire/#otel
+
+                 goes away once observability is on — or PYDANTIC_AI_NO_BANNER=1
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:chatbot.capabilities.memory.subagent:ask_memory status=not_found sources=1 chars_used=3134
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:chatbot.capabilities.memory.subagent:ask_memory status=found sources=1 chars_used=1324
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
+INFO:chatbot.capabilities.memory.subagent:ask_memory status=found sources=1 chars_used=3423
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages/count_tokens?beta=true "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 200 OK"
