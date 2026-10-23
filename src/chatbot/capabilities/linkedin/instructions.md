@@ -1,5 +1,1 @@
-LinkedIn posts: gather supporting facts with the memory and document tools, then call
-`write_linkedin_post(brief)`. Include the purpose, audience, requested tone, standing writing
-preferences and verified facts, preserving dates and numbers verbatim.
-The tool enforces <= 1,300 characters, <= 3 hashtags at the end and no links.
-Its post is shown verbatim; do not rewrite it.
+LinkedIn posts: gather supporting facts with the memory and document tools, then call `write_linkedin_post(brief)`. Include the purpose, audience, requested tone, standing writing preferences and verified facts, preserving dates and numbers verbatim. The tool enforces <= 1,300 characters, <= 3 hashtags at the end and no links. Its post is shown verbatim; do not rewrite it.

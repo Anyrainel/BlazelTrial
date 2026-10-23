@@ -717,3 +717,15 @@ its session records, notes, outputs, checkpoints, summaries, sent messages; keep
 requesting turn). Re-timed on 40 seeded messages with the real model: 1.5-2.7s, 0 worker
 steps, 40/42 messages flagged (request + reply kept). Note: in `slack-dm` (one endless
 thread) "this session" means the whole DM history.
+
+## Prompt paragraph wrapping (2026-10-22 Pacific)
+
+Confirmed that prompt loading preserves source newlines, so editor hard-wrapping
+was also sent to the model and shown in the inventory UI. Removed intra-paragraph
+line breaks from the main system prompt and all four capability instruction files;
+kept paragraph and bullet boundaries. Assumption: structural spacing is intentional.
+Verified identical words/punctuation after whitespace normalization. No loader or
+UI change is needed; already-running processes must restart to clear cached prompts.
+Validation: 221 offline tests pass; ruff and diff checks pass. Live scenario 1 PASS:
+16 calls, maximum 2,431 input tokens, no budget violations or preflight refusals.
+Temporary scenario state was automatically removed.
