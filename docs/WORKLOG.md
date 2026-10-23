@@ -930,3 +930,7 @@ idempotent for both FTS and vector rows. No claim of exactly-once external posts
 tool side effects; the single-worker-per-database requirement remains.
 Initial validation: all 37 Slack adapter tests pass, including generation exhaustion,
 restart recovery, interrupted delivery-receipt creation and forgotten pending input.
+Validation: direct DB/hash and HTTP checks pass. Full pytest: 238 passed, four
+failures in concurrently modified Slack retry/turn-lock code (FTS insert errors
+and fake_locked signature mismatch). No source code changed for this cleanup;
+left those ongoing edits untouched. Worklog diff check passes.
