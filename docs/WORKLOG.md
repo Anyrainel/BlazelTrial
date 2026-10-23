@@ -1,5 +1,30 @@
 # Work log
 
+## Remaining temporary-artifact audit (2026-10-22 Pacific)
+
+Audited tracked files, untracked files, project-root/hidden directories, nested source
+manifests, backup/copy/snapshot filenames (excluding dependency trees), Git worktrees,
+entry-point path overrides and running application commands. Found no additional project
+clone, exported source runtime or ad hoc launcher. Only one Git worktree is registered.
+.claude/launch.json is a normal uv run chatbot serve development configuration. The
+scripts/scenario sys.path additions resolve this repository's fixtures, not copied code.
+
+The previously active preparation-check-20261022 evaluation had completed (S3/S7 PASS,
+89 calls, max 4,550, no budget problems; recorded in the preparation audit below). Recycled
+its 70.63 MiB state after checking no process referenced it and cache links stayed inside
+the target. Its historical raw-report path is consequently no longer present. Remaining
+.state contents are live DB/sidecars, docs, models, logs, server pid and the empty scenarios
+parent. Preserved dependency environments, web/dist (served by HTTP), normal caches and
+historical logs/screenshots; these are not hidden source deployments.
+
+Initially observed two ordinary Slack launcher trees, including this chat's earlier worker.
+By the verification step the older tree was already gone (no stop was needed here). One
+launcher tree remains; its log confirms current src/chatbot source and a connected Bolt
+session. Legacy Fact/Summary migration/forget compatibility and handle_dm remain referenced
+by CLI/tests; removing them is a separate compatibility refactor, not artifact deletion.
+No application code changed or tests rerun for this audit. Concurrent README, Slack adapter
+and Slack test edits were left untouched. git diff --check scoped to this log passes.
+
 ## Remove obsolete Slack source snapshot (2026-10-22 Pacific)
 
 User questioned .state/runtime and requested cleanup. Verified it contained a source
