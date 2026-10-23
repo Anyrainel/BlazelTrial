@@ -49,6 +49,7 @@ class TurnRequest(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     user_message_id: int | None = None
+    reply_message_id: int | None = None
 
 
 class Message(SQLModel, table=True):

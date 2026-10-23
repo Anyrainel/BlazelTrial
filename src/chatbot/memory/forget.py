@@ -143,6 +143,11 @@ def forget_values(
         ).all():
             request.user_message_id = None
             s.add(request)
+        for request in s.exec(
+            select(TurnRequest).where(col(TurnRequest.reply_message_id).in_(gone_ids))
+        ).all():
+            request.reply_message_id = None
+            s.add(request)
         for delivery in s.exec(
             select(SlackDelivery).where(col(SlackDelivery.reply_message_id).in_(gone_ids))
         ).all():

@@ -102,7 +102,13 @@ def turn_reply(user_message: Message) -> Message | None:
         ).one_or_none()
 
 
-def add_reply(user_message: Message, reply_text: str, *, run_messages_json: str | None) -> Message:
+def add_reply(
+    user_message: Message,
+    reply_text: str,
+    *,
+    run_messages_json: str | None,
+    request_id: str | None = None,
+) -> Message:
     """Store the assistant reply for a user message stored earlier in the same turn."""
     with session() as s:
         row = Message(
@@ -115,6 +121,11 @@ def add_reply(user_message: Message, reply_text: str, *, run_messages_json: str 
             run_messages_json=run_messages_json,
         )
         s.add(row)
+        if request_id is not None:
+            s.flush()
+            receipt = s.get(TurnRequest, request_id)
+            receipt.reply_message_id = row.id
+            s.add(receipt)
         s.commit()
         return row
 

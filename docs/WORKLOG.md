@@ -934,3 +934,14 @@ Validation: direct DB/hash and HTTP checks pass. Full pytest: 238 passed, four
 failures in concurrently modified Slack retry/turn-lock code (FTS insert errors
 and fake_locked signature mismatch). No source code changed for this cleanup;
 left those ongoing edits untouched. Worklog diff check passes.
+
+Follow-up: link the reply directly from TurnRequest in the same transaction as
+reply persistence, so a request forgotten during generation can still deliver its
+safe acknowledgement. Added the additive reply-pointer migration and regression.
+Full-suite checks caught a mock with the old core signature and a migration helper
+assuming the new receipt table existed when invoked against a minimal legacy DB;
+updated the mock and guarded the ALTER for absent tables. Final validation:
+243 offline tests PASS; ruff and format checks PASS. Live scenario 1 PASS on Sonnet:
+16 calls, max 3,306 input tokens, zero budget violations/refusals; temporary state
+automatically removed. Restarted the single current-checkout Slack worker with
+separate retry-fix logs, preserving earlier logs and all existing conversation data.

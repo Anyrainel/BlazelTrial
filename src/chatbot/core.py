@@ -179,11 +179,13 @@ async def _handle_locked(
     if generate and request_id is not None:
         previous = store.turn_reply(rows[0])
         if previous is not None:
-            return previous.text
+            return store.FORGOTTEN_REPLY if previous.forgotten else previous.text
     search.index(rows)
     if generate:
         reply, run_json, forgotten = await _reply(user_id, thread_id, rows[0])
-        search.index([store.add_reply(rows[0], reply, run_messages_json=run_json)])
+        search.index(
+            [store.add_reply(rows[0], reply, run_messages_json=run_json, request_id=request_id)]
+        )
         if forgotten:
             # This turn's own run (tool args, memory answers) can hold the values: sweep again
             # now that it is stored, then purge the bytes from disk.

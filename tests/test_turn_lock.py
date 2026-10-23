@@ -8,7 +8,7 @@ from chatbot import core
 def test_turns_of_one_thread_never_overlap_but_other_threads_run_in_parallel(monkeypatch):
     events: list[str] = []
 
-    async def fake_locked(user_id, thread_id, text, generate, reply, at):
+    async def fake_locked(user_id, thread_id, text, generate, reply, at, request_id=None):
         events.append(f"start {thread_id}:{text}")
         await asyncio.sleep(0.05)
         events.append(f"end {thread_id}:{text}")

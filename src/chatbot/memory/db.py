@@ -48,6 +48,9 @@ def _add_missing_columns(engine: Engine) -> None:
             conn.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS ix_message_forgotten ON message(forgotten)"
             )
+        request_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(turnrequest)")}
+        if request_columns and "reply_message_id" not in request_columns:
+            conn.exec_driver_sql("ALTER TABLE turnrequest ADD COLUMN reply_message_id INTEGER")
 
 
 def session() -> Session:

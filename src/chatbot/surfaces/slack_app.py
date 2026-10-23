@@ -9,7 +9,6 @@ from weakref import WeakKeyDictionary
 
 from chatbot.config import get_settings
 from chatbot.core import SLACK_THREAD_ID, send_async
-from chatbot.memory import messages
 from chatbot.memory.db import session
 from chatbot.memory.models import Message, SlackDelivery, TurnRequest
 
@@ -189,9 +188,7 @@ async def _deliver_event(
         )
         with session() as s:
             request = s.get(TurnRequest, request_id)
-            user_message = s.get(Message, request.user_message_id)
-            reply = messages.turn_reply(user_message)
-            delivery = SlackDelivery(id=key, reply_message_id=reply.id)
+            delivery = SlackDelivery(id=key, reply_message_id=request.reply_message_id)
             s.add(delivery)
             s.commit()
     with session() as s:

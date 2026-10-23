@@ -347,18 +347,28 @@ def test_forgotten_failed_request_cannot_be_replayed(mode, monkeypatch):
 
 
 def test_forget_deletes_pending_output(monkeypatch):
-    async def generate(user, tid, text, **kwargs):
-        messages.ensure_thread(user, tid)
-        messages.record_turn(user, tid, text, "secret-marigold", **kwargs)
-        return "secret-marigold"
+    async def generate(*args):
+        return "secret-marigold", "[]", []
 
-    monkeypatch.setattr(slack, "send_async", generate)
+    monkeypatch.setattr(core, "_reply", generate)
     with pytest.raises(RuntimeError):
         asyncio.run(invoke(post=AsyncMock(side_effect=RuntimeError())))
     forget_values(get_settings().default_user_id, ["secret-marigold"])
     post = AsyncMock()
     asyncio.run(invoke(post=post))
     post.assert_not_awaited()
+
+
+def test_request_forgotten_during_generation_can_deliver_safe_reply(monkeypatch):
+    async def generate(user, tid, row):
+        forget_values(user, [row.text])
+        return "Forgotten.", "[]", []
+
+    monkeypatch.setattr(core, "_reply", generate)
+    post = AsyncMock()
+    asyncio.run(invoke(post=post))
+    assert post.call_args.kwargs["text"] == "Forgotten."
+    assert len(messages.thread_messages("slack-CONE")) == 2
 
 
 def test_serializes_complete_turns_but_allows_other_channels(monkeypatch):
