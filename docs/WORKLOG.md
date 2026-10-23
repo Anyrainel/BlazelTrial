@@ -1,5 +1,16 @@
 # Work log
 
+## README setup-first rewrite (2026-10-23 Pacific)
+
+Reorganized README around install/configure/chat, then .env reference, then optional model,
+Slack, document, API, tuning and evaluation commands. Used an explicit Claude quick-start
+override so copied machine-specific local paths do not block setup. Removed architecture,
+submission checklist and stale timing/count claims; moved capability authoring instructions
+to docs/CAPABILITIES.md with a README link. Checked settings and command flags against current
+source and Node requirements against the lockfile. No application behavior changed.
+Validation: local Markdown links resolve, serve/ingest help confirms examples, and
+git diff --check passes. No inference or application test run needed for documentation.
+
 ## Notes readability pass (2026-10-23 Pacific)
 
 Condensed the NOTES.md design into shared core, context, counting, scoped memory, recall,

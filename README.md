@@ -1,300 +1,219 @@
-# Chatbot with shared memory under an 8k-token budget
+# Hazel
 
-One user, two surfaces: parallel **main-chat sessions** (CLI, HTTP, web) and one endless
-**Slack DMs and channel @mentions**. Both call a single core, `send(user_id, thread_id, text) -> reply`. Memory is
-persisted in SQLite and reached by the agent through bounded tools; **every model call stays
-under `MAX_INPUT_TOKENS` (default 8,000)**, enforced before sending and logged per call.
+A personal chatbot with shared memory across web, CLI and Slack conversations.
 
-Problem statement: [docs/PROBLEM.md](docs/PROBLEM.md) · design notes: [NOTES.md](NOTES.md) ·
-decisions: [docs/DECISIONS.md](docs/DECISIONS.md) · memory contracts:
-[docs/MEMORY_CONTRACTS.md](docs/MEMORY_CONTRACTS.md).
+## Get running
 
-## Setup
+Requires Python 3.13 and [uv](https://docs.astral.sh/uv/).
+For the web UI, also install Node.js 22.12+ and npm.
+Run these commands from the repository root.
 
-Requires Python 3.13 with [uv](https://docs.astral.sh/uv/), and Node 20+ only for the web UI.
+### 1. Install and configure
 
-```bash
+```sh
 uv sync
-```
-
-```bash
 cp .env.example .env
 ```
 
-Then edit `.env`:
-- Default: `LLM_PROVIDER=local`, `LLM_MODEL=bonsai-2-27b`, with `LOCAL_SERVER_BIN` (PrismML's
-  llama.cpp fork) and `LOCAL_MODEL_PATH` (Bonsai 2 GGUF). The server on `LOCAL_BASE_URL` starts
-  on first use if it is not running (`uv run chatbot local-server start|stop|status`). If it
-  can't be reached or started, the stack uses `LLM_FALLBACK_PROVIDER`/`LLM_FALLBACK_MODEL`
-  (default `anthropic`/`claude-sonnet-5-5`, needs `ANTHROPIC_API_KEY`; `none` to fail); or
-  `LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-sonnet-5-5` and `ANTHROPIC_API_KEY`; or
-  `LLM_PROVIDER=meta`, `LLM_MODEL=muse-spark-1.3-contributor` and `META_API_KEY`.
-- `MAX_INPUT_TOKENS` sets the per-call input budget (default 8000).
-- All state lives in `STATE_DIR` (default `.state/`, committed as a snapshot of the exact state;
-  model cache, `.pid` and SQLite `-wal`/`-shm` files are ignored): `state.db`, `docs/`,
-  `logs/llm_calls.jsonl` and the embedding model cache.
+In PowerShell, use `Copy-Item .env.example .env` to copy the configuration.
 
-The agent can discover document ids with `list_docs` (paginated), then use `fetch_doc`
-or `search_doc` to read them. Generate the corpus (4 docs of 20k–40k tokens, incl. `Q3-plan`):
+For a quick start with Claude, set these values in `.env`:
 
-```bash
-uv run python scripts/gen_docs.py
+```dotenv
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-sonnet-5-5
+ANTHROPIC_API_KEY=your-key
 ```
 
-This creates `.state/docs/` on demand; the committed snapshot already contains it; regenerate it
-with the script for a different `STATE_DIR` / `DOCS_DIR`. The four synthetic
-documents are `Q3-plan`, `brand-guidelines`, `eng-onboarding`, and `security-review`.
-With the configured Bonsai tokenizer they contain roughly 25k–29k tokens each.
-`Q3-plan` states Lumen's public launch date as **September 29, 2026**.
-Character-based context estimates are conservative and are not document token counts.
+The example file defaults to a local model; the values above switch to Claude.
+Local and Meta options are listed below.
 
-Before submission, also:
+### 2. Start chatting
 
-- Run the offline tests and the full live scenario suite; inspect its saved
-  `eval-results.json` and per-call usage log for failures or budget violations.
-- Verify scenario 1 in the actual main chat and Slack DM, then record the required
-  screen recording (at most two minutes). Configured tokens alone do not verify Slack setup.
-- Update `NOTES.md` to reflect the final implementation/results and fill in hours spent.
-- Package all unedited Claude Code and Codex transcripts separately, redacting API keys;
-  exclude them and runtime state from Git. Submit the repository with its Git history.
+For the web UI, build it once:
 
-## Run the core
-
-One-shot call, the same entry point every surface uses (`thread_id` = a session id, `slack-dm`, or `slack-<channel ID>`):
-
-```bash
-uv run chatbot send me s1 "My manager is Priya Raman."
-```
-
-```bash
-uv run chatbot send me slack-dm "Who's my manager?"
-```
-
-Interactive CLI session:
-
-```bash
-uv run chatbot chat --thread s2
-```
-
-HTTP (FastAPI) on http://127.0.0.1:8000. `POST /send {"thread_id", "text"}` returns
-`{"reply"}`, and the web UI is served at `/` once built:
-
-```bash
+```sh
+cd web
+npm ci
+npm run build
+cd ..
 uv run chatbot serve
 ```
 
-```bash
-curl -s localhost:8000/send -H "Content-Type: application/json" -d "{\"thread_id\": \"s1\", \"text\": \"hi\"}"
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+Rebuild the frontend after pulling frontend changes.
+
+Or start an interactive CLI session:
+
+```sh
+uv run chatbot chat --thread s1
 ```
 
-Web UI (React + assistant-ui; build once, then `chatbot serve` serves it):
+Send an empty line or press Ctrl+C to exit. Reuse `s1` to continue that conversation,
+or choose another thread name to start a separate one.
 
-```bash
-cd web && npm install && npm run build
+For a single reply:
+
+```sh
+uv run chatbot send me s1 "My manager is Priya Raman."
 ```
 
-Load synthetic Slack history through the same pipeline as live messages (JSONL lines
-`{"user", "assistant"?, "ts"?}`):
+## Environment variables
 
-```bash
-uv run python -m scenarios.fixtures.slack_history .state/fixtures/slack_history.jsonl
+Settings are read from `.env` at startup. Restart the web/API and Slack processes after
+changing them. Keep API keys and Slack tokens in your private `.env`.
+
+### Model and storage
+
+| Variable | Purpose |
+|---|---|
+| `LLM_PROVIDER` | `anthropic`, `meta` or `local`. The example defaults to `local`. |
+| `LLM_MODEL` | Model name for the selected provider. |
+| `ANTHROPIC_API_KEY` | Required for Claude, including when used as the local-model fallback. |
+| `META_API_KEY` | Required for Meta. |
+| `MAX_INPUT_TOKENS` | Per-call input-token limit; default `8000`. |
+| `STATE_DIR` | Runtime folder; default `.state/`. |
+| `DOCS_DIR` | Documents Hazel can read; defaults to `STATE_DIR/docs/`. |
+| `DEFAULT_USER_ID` | Shared user identity for web, CLI and Slack; default `me`. |
+| `HTTP_HOST`, `HTTP_PORT` | API/web address; defaults to `127.0.0.1:8000`. |
+
+By default, runtime files live in `.state/`: the database, usage logs, model cache and
+Hazel's documents. Hazel reads `.state/docs/`; repository-root `docs/` contains development
+documentation. Model-call usage is recorded in `.state/logs/llm_calls.jsonl`.
+
+### Slack
+
+| Variable | Purpose |
+|---|---|
+| `SLACK_BOT_TOKEN` | Bot token (`xoxb-…`). |
+| `SLACK_APP_TOKEN` | App-level Socket Mode token (`xapp-…`). |
+| `SLACK_ALLOWED_USER` | Optional Slack user ID (`U…`) allowed to chat. Without it, accepted users share the same identity and memory. |
+
+### Local model
+
+| Variable | Purpose |
+|---|---|
+| `LOCAL_BASE_URL` | Server API address; default `http://localhost:11434/v1`. |
+| `LOCAL_SERVER_BIN` | Path to the llama.cpp server executable. Bonsai 2 requires PrismML's fork. |
+| `LOCAL_MODEL_PATH` | Path to the Bonsai 2 GGUF model file. Replace the example's machine-specific paths. |
+| `LOCAL_AUTOSTART` | Start the server on first use; default `true`. |
+| `LLM_FALLBACK_PROVIDER` | Provider used if the local server is unavailable; default `anthropic`. Set `none` to disable fallback. |
+| `LLM_FALLBACK_MODEL` | Fallback model; default `claude-sonnet-5-5`. |
+
+## Optional setup and commands
+
+### Use another model
+
+For Meta, set `LLM_PROVIDER=meta`, `LLM_MODEL=muse-spark-1.3-contributor` and
+`META_API_KEY` in `.env`.
+
+For local Bonsai 2, set `LLM_PROVIDER=local`, `LLM_MODEL=bonsai-2-27b`,
+`LOCAL_SERVER_BIN` and `LOCAL_MODEL_PATH`. To use an already running server, set
+`LOCAL_BASE_URL` and `LOCAL_AUTOSTART=false`. The server must support template and token-count
+endpoints. Live inference stops if token counting is unavailable.
+
+Manual local-server controls:
+
+```sh
+uv run chatbot local-server start
+uv run chatbot local-server status
+uv run chatbot local-server stop
 ```
 
-```bash
-uv run chatbot ingest .state/fixtures/slack_history.jsonl
-```
+### Connect Slack
 
-Every model call is logged to `.state/logs/llm_calls.jsonl`, one JSON line per call:
-`purpose`, `thread_id`, pre-flight estimate, provider-reported `input_tokens` (incl. cache
-reads/writes), `within_budget`.
+1. Create an app at [Slack Apps](https://api.slack.com/apps) in your workspace.
+2. Enable **Socket Mode**. Create an app-level token with `connections:write` and put it in
+   `SLACK_APP_TOKEN`.
+3. Under **OAuth & Permissions**, add bot scopes `chat:write`, `im:history`, `im:read` and
+   `app_mentions:read`. Install the app and put its bot token in `SLACK_BOT_TOKEN`.
+4. Enable **Event Subscriptions** and subscribe to `message.im` and `app_mention`.
+5. Under **App Home**, enable the Messages tab and allow users to send messages.
+6. Invite the app to channels where you want to use it: `/invite @Hazel`.
 
-## Run the Slack app
+Start the worker in a separate terminal:
 
-1. Create an app at https://api.slack.com/apps ("From scratch") in a workspace you control.
-2. **Socket Mode**: enable it and create an app-level token with `connections:write`. This is
-   `SLACK_APP_TOKEN` (`xapp-…`). No public URL or tunnel is needed.
-3. **OAuth & Permissions** bot scopes: `chat:write`, `im:history`, `im:read`, `app_mentions:read`. Install to the
-   workspace and copy the bot token into `SLACK_BOT_TOKEN` (`xoxb-…`).
-4. **Event Subscriptions**: enable, and subscribe to bot events `message.im` and `app_mention`.
-5. **App Home**: enable the Messages tab ("Allow users to send messages").
-6. Invite Hazel to each desired channel with `/invite @Hazel` (including private channels).
-7. Optional: `SLACK_ALLOWED_USER=U…` restricts both DMs and mentions to your Slack user id.
-   Without it, all accepted authors share the same personal identity and memory.
-8. When adding scopes to an existing app, reinstall it to grant them, then restart
-   `chatbot slack`. Adding an event whose scope is already granted needs only Save Changes.
-
-```bash
+```sh
 uv run chatbot slack
 ```
 
-Reference: [Slack app_mention events](https://docs.slack.dev/reference/events/app_mention/).
+DM Hazel or mention `@Hazel` in a channel. Every channel follow-up needs another mention.
+DMs share one conversation; each channel has its own conversation. Run one Slack worker
+per state database. After changing bot scopes, reinstall the app and restart the worker.
 
-DM the app: every DM goes to the `slack-dm` thread for the single configured user, so
-shared long-term facts can be recalled from main chat, DMs, and channel conversations.
-Mention `@Hazel` in a channel to chat. Each unique channel has one conversation
-`slack-<channel ID>`; Slack reply threads share that channel context. Channel answers
-are threaded under the request or its existing parent, without broadcast. Every
-channel follow-up needs another mention. DM replies keep their incoming routing;
-all DM reply threads still share `slack-dm`. Session records and draft-only rules
-stay local; long-term facts are shared through the core's bounded memory tools.
+### Documents and history
 
-Accepted DMs and mentions show a temporary “is thinking…” status while their
-turn is processed, including delivery retries. Long requests refresh the status;
-it is explicitly cleared after success, failure or cancellation. Status updates
-use `assistant.threads.setStatus` with the existing `chat:write` scope; no reaction
-scope is needed. Status API failures are logged without blocking answers.
-Slack may render this as “Hazel is working” under the request or in its reply
-thread. The startup log identifies the loaded source path and confirms status
-support. After updating code, restart with `uv run chatbot slack` from this checkout;
-an old `.state/runtime/` snapshot launcher will continue running its frozen code.
+Generate the sample documents if needed, including `Q3-plan`:
 
-The app ignores ordinary channel messages, bot/self messages, edits and file-share
-subtypes. No `message.channels`/`message.groups` subscriptions or history scopes are
-required for mention-only handling. Existing broader subscriptions are harmless:
-the adapter filters them before calling core. Run one Slack worker per state DB.
-Turns are serialized per conversation through reply delivery. Generated replies
-have persistent delivery receipts so a posting retry does not rerun tools. The
-listener retries transient failures three times; exhausted retries are logged. There
-is no background outbox drain after exhaustion or restart; replay of the original
-event can retry pending delivery.
-There remains a crash window between core completion and saving its receipt, and
-between Slack accepting a post and confirming it locally; exactly-once delivery
-across those crashes is not guaranteed. Pending replies deleted by forget are
-suppressed. See [Slack evaluation](docs/SLACK_EVALUATION.md) for live evidence.
-
-## Run the scenario script
-
-Runs the 7 assignment scenarios against the real core and real model, in a fresh state dir
-under `.state/scenarios/`. It loads 500 turns of synthetic Slack history (via `core.ingest`,
-the same path as live messages) and prints PASS/FAIL per scenario, plus a check that every
-call stayed within budget. It takes about 9 minutes and roughly 350 model calls.
-
-Automatically allocated state is deleted after success, failure or Ctrl+C, once the
-evaluation process has exited. Console results remain available. Use `--keep-state` to
-retain a fresh run's database, logs and `eval-results.json` for inspection, or
-`--state-dir PATH` to reuse and preserve a specific directory. Evaluation documents always
-use that run's `docs/`, regardless of the application's `DOCS_DIR`. Forced termination or
-power loss can bypass cleanup; remove those abandoned run directories manually.
-
-```bash
-uv run python -m scenarios
+```sh
+uv run python scripts/gen_docs.py
 ```
 
-```bash
-uv run python -m scenarios --only 1,4,5
+Documents are written to `DOCS_DIR`, or `.state/docs/` by default.
+
+Import existing history from JSONL with one `{"user":"…","assistant":"…"}` object per line
+(`assistant` is optional):
+
+```sh
+uv run chatbot ingest history.jsonl --thread slack-dm
 ```
 
-```bash
-uv run python -m scenarios --only 1,4,5 --keep-state
+### API and frontend development
+
+`uv run chatbot serve` also exposes `POST /send`. Send a JSON body such as
+`{"thread_id":"s1","text":"Hello"}`; the response contains `{"reply":"…"}`.
+
+Override the listening address:
+
+```sh
+uv run chatbot serve --host 127.0.0.1 --port 8080
 ```
 
-Offline unit tests (no network, fake models):
+For frontend development, run the API on port 8000, then run `npm run dev` from `web/`
+and open the URL it prints.
 
-```bash
+### Memory and context options
+
+These settings can be added to `.env`; the defaults are suitable for getting started.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MEMORY_FORGET_MODE` | `soft` | Preserve visible chat when forgetting. `hard` also deletes matching chat messages. |
+| `HISTORY_TOKEN_BUDGET` | `2500` | Recent-history token allowance. |
+| `HISTORY_WINDOW_STEP` | `8` | Turns between history-window boundaries. |
+| `SUMMARY_CHUNK_TURNS` | `25` | Conversation segment size for notes. |
+| `SUMMARY_KEEP_RECENT_TURNS` | `16` | How many recent turns to leave before generating notes. |
+| `PREFERENCES_MAX_CHARS` | `1200` | Total length allowed for shared standing preferences. |
+| `SESSION_PREFERENCES_MAX_CHARS` | `400` | Total length allowed for session preferences. |
+| `MEMORY_ANTHROPIC_THINKING` | `between_tools` in `.env.example` | Use `between_tools` for Sonnet 5.5 to disable pre-response thinking; older Claude models use `disabled`. |
+| `LOCAL_REASONING` | `auto` | Local thinking mode: `on`, `off` or `auto`. |
+| `LOCAL_REASONING_EFFORT` | `low` | Local thinking effort: `default`, `low`, `medium` or `xhigh`. |
+
+### Tests and diagnostics
+
+Offline tests:
+
+```sh
 uv run pytest -q
 ```
 
-Retrieval recall per search configuration (no LLM; point `STATE_DIR` at a state with history):
+Live scenarios use the configured model and incur its normal inference cost:
 
-```bash
-uv run python scripts/eval_retrieval.py
+```sh
+uv run python -m scenarios
+uv run python -m scenarios --only 1,4,5
 ```
 
-## How it works (short)
+Results print as PASS/FAIL. Temporary evaluation state is cleaned up automatically.
+Add `--keep-state` to retain results, or `--state-dir PATH` to use and preserve a specific directory.
 
-- **Budget guard** (`agent/budget.py`): every model is wrapped. Each request is counted before
-  sending (Claude/Meta provider count endpoint; the local llama.cpp server's own template and
-  tokenizer using the inference adapter's serialized payload). If counting fails, live
-  inference is not sent. Estimates are only used to plan shrinking and in offline tests.
-  One that is not below `MAX_INPUT_TOKENS` is shrunk (`agent/shrink.py`)
-  and re-counted instead of failing; the reported usage is logged, and a low count raises the
-  safety scale.
-- **Context**: static instructions (system prompt + capability instructions) and a bounded
-  recent-turn window, nothing else. A history hook re-fits every request of a turn. Long tool
-  loops move older tool results behind `out:` refs and write a checkpoint.
-- **Memory is tool-driven** (`capabilities/memory`):
-  - One bounded memory worker, three modes. `ask_memory(question)` searches BM25 indexes of
-    memory records, raw messages, episode notes and opened document passages (plus an exact
-    `grep`) and returns a status, an answer and its sources.
-  - `update_memory(change, scope)` lets the worker find the records a statement replaces and
-    write a new version (the old one stays as history), save a new record, or retire one.
-    Preference records are the one memory always injected ("Standing preferences" in the
-    instructions), so they are short rules with a total size cap (`PREFERENCES_MAX_CHARS`,
-    `SESSION_PREFERENCES_MAX_CHARS`); a write over the cap is refused until something is
-    shortened, merged or retired.
-  - `forget(what)` lets the worker find every wording, then remove it from active memory.
-    Soft mode (default) never removes chat history: a message holding the forgotten value stays
-    in the conversation as written, flagged `forgotten`, and memory never uses it again (not
-    indexed, searched, read, replayed or summarized). Records, notes, saved outputs and sent
-    messages derived from it are deleted for real. `MEMORY_FORGET_MODE=hard` also deletes the
-    messages and purges the bytes.
-- **Big documents** (`fetch_doc`, `search_doc`) are never inlined. They are read once by
-  map-reduce into a cached note, with passages searchable.
+Browse **Memory & artifacts** in the web sidebar, or search from the CLI:
 
-## Context configuration
-
-Context settings are centralized in `src/chatbot/config.py`, read from `.env` at startup:
-`HISTORY_WINDOW_STEP=8`, `SUMMARY_CHUNK_TURNS=25`, `SUMMARY_KEEP_RECENT_TURNS=16`, and
-`HISTORY_TOKEN_BUDGET=2500`. The first three mean window alignment, note segment size, and
-how far behind the newest turn a segment must be before summarization. Restart the API and
-Slack processes after changing settings. Existing notes remain; use a fresh state directory
-when comparing different segment sizes.
-
-## Add a capability
-
-Each capability is a folder under `src/chatbot/capabilities/`; it is discovered automatically
-and loaded upfront.
-
-1. Create `src/chatbot/capabilities/<name>/instructions.md`. It holds the short usage rules
-   added to the chat agent's instructions.
-2. Create `src/chatbot/capabilities/<name>/__init__.py` with the tool functions and a
-   `CAPABILITY`:
-
-```python
-from pydantic_ai import RunContext
-from chatbot.capabilities.registry import capability
-
-
-def weather(ctx: RunContext, city: str) -> str:
-    """Current weather for a city (the docstring is the tool description the model sees)."""
-    return "..."  # keep tool output bounded; never return unbounded text
-
-
-CAPABILITY = capability("weather", "Look up the weather.", __file__, weather)
-```
-
-3. Use `ctx.deps.user_id` / `ctx.deps.thread_id` for identity, never model arguments. If the
-   tool mutates something, make it idempotent per turn (see `capabilities/memory.mutation_key`).
-   If a model call is needed, build it with `agent.models.build_model` so it stays under the
-   budget guard, and tag it with `call_context(purpose=...)`.
-4. Check the per-request token cost, then add tests next to `tests/test_capabilities.py`:
-
-```bash
+```sh
+uv run chatbot memory-search s1 "manager"
 uv run chatbot capabilities
 ```
 
-Hard output rules belong in code, not prompts: see `capabilities/linkedin/validator.py`.
-
-## Inspect memory and artifacts
-
-Open **Memory & artifacts** in the web sidebar to browse and search current/previous
-memory records, their sources, conversation notes, document notes/passages and opened
-documents, saved tool outputs, task checkpoints, mock messages, Slack delivery receipts
-and legacy stores. Counts, pagination and refresh are available. Document filenames and
-capability instructions are also visible. This is a read-only owner view across sessions;
-it does not broaden the agent's own memory access. Forgotten chat text remains visible
-in conversation history in soft mode; deleted derived memory is absent from this view.
-
-Read-only APIs: `GET /agent/inventory`, `GET /agent/inventory/{category}?q=&offset=&limit=`.
-`GET /agent/status` exposes budget/forget policy and documented delivery limitations for
-programmatic queries. No delivery failure notification UI has been added. API keys and
-runtime credentials are never included in these responses. Restart the API after pulling.
-The artifact browser also shows system instructions and the last 500 usage-log entries
-(filtered to the owner, with only usage fields exposed).
-
-Evaluation coverage and limitations: see [docs/EVAL_REVIEW.md](docs/EVAL_REVIEW.md).
-The default scenario runner now includes cases 8 (cross-session corrections) and 9
-(event/amount distractors), requires real API counting/usage evidence, and saves
-`eval-results.json` in its state directory (retained with `--keep-state` or `--state-dir`).
-Run `uv run python -m scenarios --only 5,8,9`
-for the strengthened locality check and added cases.
+Development references: [adding a capability](docs/CAPABILITIES.md),
+[design notes](NOTES.md), [evaluation coverage](docs/EVAL_REVIEW.md) and
+[Slack evaluation](docs/SLACK_EVALUATION.md).
