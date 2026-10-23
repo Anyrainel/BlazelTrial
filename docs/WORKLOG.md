@@ -811,3 +811,15 @@ restarted from the checkout before resuming. Current worker stays connected.
 The test plan and independent read-only checks live in scenarios/slack_live_demo.py;
 all runtime evidence/transcripts remain gitignored. The requested live demo stays
 in the active DB and Slack; no isolated fake history or answers are substituted.
+
+User steering: asked for faster execution, then more varied non-checkpoint filler.
+Paused at the verified completion boundary 296; replaced remaining filler from 297
+with individually authored short observations, questions, jokes and follow-ups
+(scenarios/fixtures/slack_demo_filler.py). Kept every remaining specified checkpoint
+unchanged. Added a cooperative pause-file check for later steering. Driver resumed
+at 297; transport evidence preserves original Socket Mode boundary 181. Runtime
+runner was not restarted on production/model changes; only this test plan changed.
+Live turn 220 declined to message an address because it was forgotten; both address
+terms have zero matches through memory grep. British draft at 261 uses colourful;
+American draft at 301 uses neighborhood/colors. Checks accept representative spelling
+rather than requiring the model to repeat every word from the request verbatim.

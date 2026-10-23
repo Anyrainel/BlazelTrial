@@ -24,6 +24,7 @@ from chatbot.memory.grep import find
 from chatbot.memory.models import Message, OutboundMessage, Role, SlackDelivery
 from chatbot.surfaces.slack_app import handle_event
 from scenarios.checks import budget_problems
+from scenarios.fixtures.slack_demo_filler import MESSAGES as VARIED_MESSAGES
 
 TOPICS = [
     ("a quiet Saturday breakfast", "pancakes", "toast"),
@@ -144,6 +145,10 @@ def plan() -> list[str]:
         )
     for turn, text in SPECIAL.items():
         turns[turn - 1] = text
+    varied = iter(VARIED_MESSAGES)
+    for turn in range(297, 521):
+        if turn not in SPECIAL:
+            turns[turn - 1] = next(varied)
     assert len(turns) == 520
     assert all("manager" not in text.lower() for text in turns)
     return turns
@@ -202,6 +207,19 @@ def report() -> dict:
             and all(term.lower() not in o.text.lower() for o in outbound)
             for term in address_terms
         ),
+        "spelling_drafts": all(
+            any(word in replies.get(turn, "").lower() for word in wanted)
+            and not any(word in replies.get(turn, "").lower() for word in unwanted)
+            for turn, (wanted, unwanted) in {
+                261: (("organis", "colour", "neighbour"), ("organiz", "color", "neighbor")),
+                301: (("organiz", "color", "neighbor"), ("organis", "colour", "neighbour")),
+                341: (("favourite", "colour", "centre"), ("favorite", "color", "center")),
+                391: (("organiz", "color", "neighbor"), ("organis", "colour", "neighbour")),
+            }.items()
+        ),
+        "spelling_history": all(
+            word in replies.get(430, "").lower() for word in ("british", "american")
+        ),
         "linkedin_rules": bool(replies.get(520)) and not problems(replies[520]),
         "budget": not budget_problems(calls, settings.max_input_tokens),
     }
@@ -219,7 +237,7 @@ def report() -> dict:
     }
 
 
-async def send_remaining(channel: str) -> None:
+async def send_remaining(channel: str) -> bool:
     """Real Slack posts + production handler, with a verified-human event envelope.
 
     User-token posts are app-authored (bot_id), so Socket Mode's bot filter ignores
@@ -244,18 +262,22 @@ async def send_remaining(channel: str) -> None:
     evidence = settings.state_path / "scenarios" / "slack-live-demo"
     evidence.mkdir(parents=True, exist_ok=True)
     turns = plan()
-    (evidence / "transport.json").write_text(
-        json.dumps(
-            {
-                "socket_mode_through_turn": completed,
-                "remaining_transport": "Slack Web API + explicit production handle_event",
-                "synthetic_assistant_replies": False,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
+    transport_path = evidence / "transport.json"
+    transport = (
+        json.loads(transport_path.read_text())
+        if transport_path.exists()
+        else {
+            "socket_mode_through_turn": completed,
+            "remaining_transport": "Slack Web API + explicit production handle_event",
+            "synthetic_assistant_replies": False,
+        }
     )
+    transport.setdefault("api_adapter_resume_after_turns", []).append(completed)
+    transport_path.write_text(json.dumps(transport, indent=2), encoding="utf-8")
     for turn in range(completed + 1, 521):
+        if (evidence / "pause").exists():
+            print(json.dumps({"paused_after": turn - 1}), flush=True)
+            return False
         posted = await user.chat_postMessage(
             channel=channel,
             text=turns[turn - 1],
@@ -284,6 +306,7 @@ async def send_remaining(channel: str) -> None:
         progress = {"completed": turn, "reply_chars": len(answer), "checkpoint": turn in SPECIAL}
         (evidence / "progress.json").write_text(json.dumps(progress), encoding="utf-8")
         print(json.dumps(progress), flush=True)
+    return True
 
 
 def main() -> None:
@@ -295,7 +318,8 @@ def main() -> None:
     evidence.mkdir(parents=True, exist_ok=True)
     if args.send:
         logging.basicConfig(level=logging.ERROR)
-        asyncio.run(send_remaining(args.send))
+        if not asyncio.run(send_remaining(args.send)):
+            return
         args.report_only = True
     if not args.report_only:
         (evidence / "plan.json").write_text(
