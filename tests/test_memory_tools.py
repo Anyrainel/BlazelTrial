@@ -21,6 +21,20 @@ A = MemoryCaller("me", "A")
 B = MemoryCaller("me", "B")
 
 
+@pytest.mark.parametrize("mode", list(Mode))
+@pytest.mark.parametrize("thinking_type", ["between_tools", "disabled"])
+def test_memory_workers_disable_anthropic_thinking(mode, thinking_type, monkeypatch):
+    monkeypatch.setattr(
+        subagent,
+        "get_settings",
+        lambda: get_settings().model_copy(update={"memory_anthropic_thinking": thinking_type}),
+    )
+    subagent.get_worker.cache_clear()
+    settings = subagent.get_worker(mode).model_settings
+    assert settings["anthropic_thinking"] == {"type": thinking_type}
+    assert settings["anthropic_cache"] is True
+
+
 def chat(steps: list, final: str = "ok", seen: list | None = None):
     return get_agent().override(model=build_model(get_settings(), raw=scripted(steps, final, seen)))
 

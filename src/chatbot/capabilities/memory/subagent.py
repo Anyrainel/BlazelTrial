@@ -453,7 +453,10 @@ def get_worker(mode: Mode) -> Agent[WorkerDeps, MemoryAnswer | WorkResult]:
         instructions=instructions,
         # Each step of one task resends the previous steps: automatic caching makes those
         # reads (measured: 604k uncached subagent input tokens in one full scenario run).
-        model_settings=mechanical_task_settings(get_settings(), max_tokens=1500, cache=True),
+        model_settings={
+            **mechanical_task_settings(get_settings(), max_tokens=1500, cache=True),
+            "anthropic_thinking": {"type": get_settings().memory_anthropic_thinking},
+        },
     )
     for tool in _TOOLS[mode]:
         agent.tool(tool)

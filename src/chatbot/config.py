@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     # Write and forget tasks of the same worker, and the most messages one string may erase
     # without the worker confirming that the user meant everything.
     memory_write_max_requests: int = 6
+    # Sonnet 5.5 uses between_tools to disable pre-response thinking; older models use disabled.
+    memory_anthropic_thinking: Literal["disabled", "between_tools"] = "disabled"
     memory_forget_max_requests: int = 8
     memory_erase_max_messages: int = 15
 

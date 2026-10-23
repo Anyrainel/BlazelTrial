@@ -887,3 +887,19 @@ Live scenario 1 PASS on Sonnet in automatically cleaned temporary state: 16 mode
 calls, max 3,395 input tokens, no budget violations or preflight refusals.
 Existing unrelated state/log changes remain uncommitted.
 Validation: 230 offline tests pass; git diff --check passes; temporary scenario state removed.
+
+## Disable Sonnet memory-worker thinking (2026-10-23 Pacific)
+
+User requested Sonnet thinking off for the memory agent. All three worker modes
+now explicitly set anthropic_thinking while retaining caching and existing local
+thinking controls. MEMORY_ANTHROPIC_THINKING configures the provider's off mode:
+private .env uses between_tools for Sonnet 5.5; older models can use disabled.
+Model IDs remain selected by configuration. Main chat settings are unchanged.
+AI mistake caught by live validation: the installed SDK advertises disabled, but
+Sonnet 5.5's token-count endpoint rejects it and explicitly requires between_tools.
+That mode disables pre-response thinking; short between-tool updates may still be
+returned as thinking blocks. Corrected and reran scenario 1: PASS, 16 calls,
+maximum 3,315 input tokens, zero budget violations/refusals. Temporary state removed.
+Added regressions for every worker mode and both off settings. Restarted current
+HTTP and Slack workers to reload the code and private setting; no history cleanup.
+Final validation: 236 tests pass; scoped ruff/format and git diff --check pass. HTTP healthy; Slack connected; all three configured workers report between_tools.
