@@ -852,3 +852,7 @@ Demo driver has exited; current-checkout Slack worker remains available. The res
 backup is recoverable; live demo DB and real Slack conversation intentionally remain.
 Observed cosmetic issue left visible: Bonsai occasionally emits a closing think tag
 and repeats a sentence. No production/model change attempted during the demo.
+
+## Harness illustration (2026-10-23 Pacific)
+Generated docs/diagrams/chatbot-harness.png with built-in imagegen from current architecture docs and core implementation. Assumption: harness means the chatbot runtime. Visually checked single-screen labels, shared core, tool-based memory, capability paths, persistence and universal budget guard. Illustration only; no runtime changes or scenario execution.
+
