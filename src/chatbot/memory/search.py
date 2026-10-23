@@ -84,7 +84,7 @@ def _engine() -> Engine:
 
 
 def index(messages: list[Message]) -> None:
-    """Add messages to both indexes (rowid = message id)."""
+    """Index messages idempotently (rowid = message id), including resumed turns."""
     rows = [m for m in messages if m.id is not None and m.text.strip() and not m.forgotten]
     if not rows:
         return
@@ -94,6 +94,8 @@ def index(messages: list[Message]) -> None:
     vectors = embedder.embed([m.text[:_EMBED_CHARS] for m in rows])
     with engine.begin() as conn:
         for m, vec in zip(rows, vectors, strict=True):
+            conn.exec_driver_sql("DELETE FROM message_fts WHERE rowid = ?", (m.id,))
+            conn.exec_driver_sql(f"DELETE FROM {table} WHERE rowid = ?", (m.id,))
             conn.exec_driver_sql(
                 "INSERT INTO message_fts(rowid, text, thread_id, turn) VALUES (?, ?, ?, ?)",
                 (m.id, m.text, m.thread_id, m.turn),

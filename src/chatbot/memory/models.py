@@ -41,6 +41,16 @@ class SlackDelivery(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class TurnRequest(SQLModel, table=True):
+    """Idempotency receipt, committed with the input before reply generation.
+
+    Forget clears the pointer but retains the key to prevent replaying erased input.
+    """
+
+    id: str = Field(primary_key=True)
+    user_message_id: int | None = None
+
+
 class Message(SQLModel, table=True):
     """One user or assistant message. A turn = a user message plus its assistant reply."""
 

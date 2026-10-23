@@ -903,3 +903,30 @@ maximum 3,315 input tokens, zero budget violations/refusals. Temporary state rem
 Added regressions for every worker mode and both off settings. Restarted current
 HTTP and Slack workers to reload the code and private setting; no history cleanup.
 Final validation: 236 tests pass; scoped ruff/format and git diff --check pass. HTTP healthy; Slack connected; all three configured workers report between_tools.
+
+## Third HTTP recording cleanup (2026-10-23 Pacific)
+
+User again requested removal of web sessions and manager memory. Removed web
+sessions s-070cfa15 and s-c6e090d1 (eight messages), manager record 27 and its
+source using existing hard session-forget and empty-thread deletion. Compared
+hashes of all unrelated persisted model rows before/after: unchanged, including
+all 1,043 Slack messages, memory, notes and receipts. Live /threads lists only
+Slack DM. Sonnet and memory thinking settings unchanged. No inference required.
+
+
+## Slack generation retry deduplication (2026-10-23 Pacific)
+
+User reported one Slack question appearing three times without an answer. The adapter
+retried core.send_async after generation failures, but each call stored a new user
+turn. Assumption: deduplicate by Slack workspace/channel/message timestamp, never by
+message text, and retain existing failed history rather than deleting user data.
+Added a content-free TurnRequest receipt committed atomically with the user row;
+core resumes that row and reuses an already stored reply. Slack delivery selects the
+reply for that exact request instead of the latest assistant message. Forget clears
+request pointers but retains tombstones, preventing replay after soft/hard forgetting.
+AI implementation mistake caught by regression tests: re-indexing a resumed user
+message initially collided with its existing FTS row. Made message indexing
+idempotent for both FTS and vector rows. No claim of exactly-once external posts or
+tool side effects; the single-worker-per-database requirement remains.
+Initial validation: all 37 Slack adapter tests pass, including generation exhaustion,
+restart recovery, interrupted delivery-receipt creation and forgotten pending input.

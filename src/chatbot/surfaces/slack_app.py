@@ -7,12 +7,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from weakref import WeakKeyDictionary
 
-from sqlmodel import col, select
-
 from chatbot.config import get_settings
 from chatbot.core import SLACK_THREAD_ID, send_async
+from chatbot.memory import messages
 from chatbot.memory.db import session
-from chatbot.memory.models import Message, Role, SlackDelivery
+from chatbot.memory.models import Message, SlackDelivery, TurnRequest
 
 logger = logging.getLogger(__name__)
 # One Socket Mode worker per state DB. Locks span generation AND delivery, so replies
@@ -181,17 +180,17 @@ async def _deliver_event(
     if delivery is not None and delivery.delivered:
         return
     if delivery is None:
-        await send_async(settings.default_user_id, tid, normalize_text(event["text"], bot_user_id))
+        request_id = "slack:" + key
+        await send_async(
+            settings.default_user_id,
+            tid,
+            normalize_text(event["text"], bot_user_id),
+            request_id=request_id,
+        )
         with session() as s:
-            reply = s.exec(
-                select(Message)
-                .where(
-                    Message.thread_id == tid,
-                    Message.role == Role.ASSISTANT,
-                )
-                .order_by(col(Message.id).desc())
-                .limit(1)
-            ).one()
+            request = s.get(TurnRequest, request_id)
+            user_message = s.get(Message, request.user_message_id)
+            reply = messages.turn_reply(user_message)
             delivery = SlackDelivery(id=key, reply_message_id=reply.id)
             s.add(delivery)
             s.commit()

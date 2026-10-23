@@ -17,7 +17,7 @@ from sqlmodel import col, func, select
 
 from chatbot.agent.budget import estimate_tokens
 from chatbot.memory.db import session
-from chatbot.memory.models import Message, Role, Source, Thread, ThreadKind, utcnow
+from chatbot.memory.models import Message, Role, Source, Thread, ThreadKind, TurnRequest, utcnow
 
 SLACK_THREAD_ID = "slack-dm"
 
@@ -42,9 +42,19 @@ def record_turn(
     run_messages_json: str | None = None,
     source: Source = Source.LIVE,
     at: datetime | None = None,
+    request_id: str | None = None,
 ) -> list[Message]:
     """Store one turn atomically (`reply_text=None`: user message only). Returns stored rows."""
     with session() as s:
+        if request_id is not None:
+            receipt = s.get(TurnRequest, request_id)
+            if receipt is not None:
+                row = s.get(Message, receipt.user_message_id) if receipt.user_message_id else None
+                if row is None or row.forgotten:
+                    raise ValueError("This request was forgotten and cannot be retried")
+                if (row.user_id, row.thread_id, row.text) != (user_id, thread_id, user_text):
+                    raise ValueError("Request id already belongs to a different message")
+                return [row]
         last = s.exec(select(func.max(Message.turn)).where(Message.thread_id == thread_id)).one()
         turn = (last or 0) + 1
         rows = [
@@ -72,8 +82,24 @@ def record_turn(
                 )
             )
         s.add_all(rows)
+        if request_id is not None:
+            s.flush()
+            s.add(TurnRequest(id=request_id, user_message_id=rows[0].id))
         s.commit()
         return rows
+
+
+def turn_reply(user_message: Message) -> Message | None:
+    """Find this turn's reply, including one saved before an interrupted delivery."""
+    with session() as s:
+        return s.exec(
+            select(Message).where(
+                Message.thread_id == user_message.thread_id,
+                Message.user_id == user_message.user_id,
+                Message.turn == user_message.turn,
+                Message.role == Role.ASSISTANT,
+            )
+        ).one_or_none()
 
 
 def add_reply(user_message: Message, reply_text: str, *, run_messages_json: str | None) -> Message:

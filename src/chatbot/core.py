@@ -143,6 +143,7 @@ async def _handle(
     generate: bool,
     reply: str | None = None,
     at: datetime | None = None,
+    request_id: str | None = None,
 ) -> str | None:
     """One pipeline for live and ingested messages; ingest only skips the model reply.
 
@@ -151,7 +152,7 @@ async def _handle(
     """
     locks = _turn_locks.setdefault(asyncio.get_running_loop(), {})
     async with locks.setdefault(thread_id, asyncio.Lock()):
-        return await _handle_locked(user_id, thread_id, text, generate, reply, at)
+        return await _handle_locked(user_id, thread_id, text, generate, reply, at, request_id)
 
 
 async def _handle_locked(
@@ -161,13 +162,24 @@ async def _handle_locked(
     generate: bool,
     reply: str | None,
     at: datetime | None,
+    request_id: str | None = None,
 ) -> str | None:
     search.repair_once(get_engine())  # heal index rows lost to a crash after a message commit
     store.ensure_thread(user_id, thread_id)
     source = Source.LIVE if generate else Source.INGEST
     rows = store.record_turn(
-        user_id, thread_id, text, None if generate else reply, source=source, at=at
+        user_id,
+        thread_id,
+        text,
+        None if generate else reply,
+        source=source,
+        at=at,
+        request_id=request_id,
     )
+    if generate and request_id is not None:
+        previous = store.turn_reply(rows[0])
+        if previous is not None:
+            return previous.text
     search.index(rows)
     if generate:
         reply, run_json, forgotten = await _reply(user_id, thread_id, rows[0])
@@ -185,9 +197,11 @@ async def flush_async(user_id: str, thread_id: str) -> None:
     await _upkeep(thread_id)
 
 
-async def send_async(user_id: str, thread_id: str, text: str) -> str:
+async def send_async(
+    user_id: str, thread_id: str, text: str, *, request_id: str | None = None
+) -> str:
     """Handle one live user message and return the reply."""
-    reply = await _handle(user_id, thread_id, text, generate=True)
+    reply = await _handle(user_id, thread_id, text, generate=True, request_id=request_id)
     assert reply is not None
     return reply
 

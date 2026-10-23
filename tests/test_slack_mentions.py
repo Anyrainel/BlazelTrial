@@ -108,9 +108,9 @@ def test_status_precedes_generation_and_clears_after_post(is_dm, parent, monkeyp
         event.update(type="message", channel_type="im", channel="D1")
     target = dict(channel_id=event["channel"], thread_ts=parent or event["ts"])
 
-    async def generate(*args):
+    async def generate(*args, **kwargs):
         status.assert_awaited_once_with(**target, status="is thinking…")
-        return await real(*args)
+        return await real(*args, **kwargs)
 
     async def post(**kwargs):
         assert status.await_count == 1
@@ -264,10 +264,92 @@ def test_post_failure_reuses_core_reply_after_restart(monkeypatch):
     assert len(messages.thread_messages("slack-CONE")) == 2
 
 
+@pytest.mark.parametrize("is_dm", [False, True])
+def test_generation_retries_keep_one_user_message(is_dm, monkeypatch):
+    real = core._reply
+    attempted_ids = []
+    event = dict(BASE)
+    tid = "slack-CONE"
+    if is_dm:
+        event.update(type="message", channel_type="im", channel="D1")
+        tid = "slack-dm"
+
+    async def flaky(user, thread, row):
+        attempted_ids.append(row.id)
+        if len(attempted_ids) < 3:
+            raise RuntimeError("generation failed after saving input")
+        return await real(user, thread, row)
+
+    monkeypatch.setattr(core, "_reply", flaky)
+    monkeypatch.setattr(slack.asyncio, "sleep", AsyncMock())
+    post = AsyncMock()
+    asyncio.run(slack.handle_event(event, body={}, bot_user_id=BOT, post=post, attempts=3))
+    assert len(attempted_ids) == 3 and len(set(attempted_ids)) == 1
+    assert len(messages.thread_messages(tid)) == 2
+    post.assert_awaited_once()
+
+
+def test_exhausted_generation_retries_resume_after_restart(monkeypatch):
+    real = core._reply
+    failed = AsyncMock(side_effect=RuntimeError("generation unavailable"))
+    monkeypatch.setattr(core, "_reply", failed)
+    monkeypatch.setattr(slack.asyncio, "sleep", AsyncMock())
+    post = AsyncMock()
+    with pytest.raises(RuntimeError):
+        asyncio.run(slack.handle_event(BASE, body={}, bot_user_id=BOT, post=post, attempts=3))
+    original = messages.thread_messages("slack-CONE")
+    assert len(original) == 1 and failed.await_count == 3
+    post.assert_not_awaited()
+    slack._locks.clear()
+    core._turn_locks.clear()
+    monkeypatch.setattr(core, "_reply", real)
+    asyncio.run(slack.handle_event(BASE, body={}, bot_user_id=BOT, post=post))
+    rows = messages.thread_messages("slack-CONE")
+    assert len(rows) == 2 and rows[0].id == original[0].id
+    post.assert_awaited_once()
+
+
+def test_interruption_before_delivery_receipt_reuses_saved_reply(monkeypatch):
+    real = slack.send_async
+
+    async def interrupted(*args, **kwargs):
+        await real(*args, **kwargs)
+        raise RuntimeError("interrupted after core saved reply")
+
+    monkeypatch.setattr(slack, "send_async", interrupted)
+    with pytest.raises(RuntimeError):
+        asyncio.run(invoke())
+    # Another turn must not cause delivery to select the latest, unrelated reply.
+    core.send(get_settings().default_user_id, "slack-CONE", "a separate request")
+    monkeypatch.setattr(slack, "send_async", real)
+    monkeypatch.setattr(
+        core, "_reply", AsyncMock(side_effect=AssertionError("must not regenerate"))
+    )
+    post = AsyncMock()
+    asyncio.run(invoke(post=post))
+    with session() as s:
+        receipt = s.get(SlackDelivery, "T1:CONE:1.001")
+    assert receipt.reply_message_id == messages.thread_messages("slack-CONE")[1].id
+    assert len(messages.thread_messages("slack-CONE")) == 4
+    post.assert_awaited_once()
+
+
+@pytest.mark.parametrize("mode", ["soft", "hard"])
+def test_forgotten_failed_request_cannot_be_replayed(mode, monkeypatch):
+    monkeypatch.setattr(core, "_reply", AsyncMock(side_effect=RuntimeError("unavailable")))
+    with pytest.raises(RuntimeError):
+        asyncio.run(invoke())
+    forget_values(get_settings().default_user_id, ["hi"], mode=mode)
+    post = AsyncMock()
+    with pytest.raises(ValueError, match="forgotten"):
+        asyncio.run(invoke(post=post))
+    post.assert_not_awaited()
+
+
 def test_forget_deletes_pending_output(monkeypatch):
-    async def generate(user, tid, text):
+    async def generate(user, tid, text, **kwargs):
         messages.ensure_thread(user, tid)
-        messages.record_turn(user, tid, text, "secret-marigold")
+        messages.record_turn(user, tid, text, "secret-marigold", **kwargs)
         return "secret-marigold"
 
     monkeypatch.setattr(slack, "send_async", generate)
@@ -283,11 +365,11 @@ def test_serializes_complete_turns_but_allows_other_channels(monkeypatch):
     real = slack.send_async
     entered, delivered = [], []
 
-    async def generate(user, tid, text):
+    async def generate(user, tid, text, **kwargs):
         entered.append(text)
         if text == "slow":
             await asyncio.sleep(0.03)
-        return await real(user, tid, text)
+        return await real(user, tid, text, **kwargs)
 
     async def post(**kw):
         delivered.append(kw["thread_ts"])

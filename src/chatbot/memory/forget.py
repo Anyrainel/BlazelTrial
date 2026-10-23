@@ -46,6 +46,7 @@ from chatbot.memory.models import (
     Store,
     Summary,
     ToolOutput,
+    TurnRequest,
 )
 from chatbot.memory.records import _write_lock
 
@@ -137,6 +138,11 @@ def forget_values(
             and (mode == "hard" or not m.forgotten)
         ]
         gone_ids = {m.id for m in gone_msgs}
+        for request in s.exec(
+            select(TurnRequest).where(col(TurnRequest.user_message_id).in_(gone_ids))
+        ).all():
+            request.user_message_id = None
+            s.add(request)
         for delivery in s.exec(
             select(SlackDelivery).where(col(SlackDelivery.reply_message_id).in_(gone_ids))
         ).all():
