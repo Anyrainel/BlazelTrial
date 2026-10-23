@@ -17,8 +17,11 @@ from dotenv import dotenv_values
 from slack_sdk.web.async_client import AsyncWebClient
 from sqlmodel import select
 
+from chatbot import core
 from chatbot.capabilities.linkedin.validator import problems
 from chatbot.config import REPO_ROOT, get_settings
+from chatbot.memory import forget, search
+from chatbot.memory import messages as message_store
 from chatbot.memory.db import session
 from chatbot.memory.grep import find
 from chatbot.memory.models import Message, OutboundMessage, Role, SlackDelivery
@@ -237,7 +240,59 @@ def report() -> dict:
     }
 
 
-async def send_remaining(channel: str) -> bool:
+async def recover_pending(
+    channel: str, user: AsyncWebClient, bot: AsyncWebClient, human: dict, agent: dict
+) -> None:
+    """Finish a failed model run for its original stored user message, no new turn.
+
+    Reuses the exact core reply/persist/upkeep path for recovery, then the normal
+    adapter receipt/post path. The original request already entered via send_async.
+    """
+    rows = messages()
+    last = max(m.turn for m in rows)
+    pending = [m for m in rows if m.turn == last]
+    if len(pending) != 1 or pending[0].role != Role.USER:
+        raise RuntimeError("Recovery requires exactly one incomplete latest turn")
+    original = pending[0]
+    latest = (await user.conversations_history(channel=channel, limit=1))["messages"][0]
+    if latest.get("user") != human["user_id"] or latest.get("text") != original.text:
+        raise RuntimeError("Latest Slack request must match the incomplete stored turn")
+    reply, run_json, forgotten = await core._reply(original.user_id, original.thread_id, original)
+    search.index([message_store.add_reply(original, reply, run_messages_json=run_json)])
+    if forgotten:
+        forget.forget_values(original.user_id, forgotten)
+    await core._upkeep(original.thread_id)
+    with session() as db:
+        answer = db.exec(
+            select(Message).where(
+                Message.thread_id == original.thread_id,
+                Message.turn == last,
+                Message.role == Role.ASSISTANT,
+            )
+        ).one()
+        db.add(
+            SlackDelivery(
+                id=f"{human['team_id']}:{channel}:{latest['ts']}", reply_message_id=answer.id
+            )
+        )
+        db.commit()
+    await handle_event(
+        {
+            "type": "message",
+            "channel_type": "im",
+            "channel": channel,
+            "user": human["user_id"],
+            "text": original.text,
+            "ts": latest["ts"],
+        },
+        body={"team_id": human["team_id"]},
+        bot_user_id=agent["user_id"],
+        post=bot.chat_postMessage,
+    )
+    print(json.dumps({"recovered_original_turn": last}), flush=True)
+
+
+async def send_remaining(channel: str, *, resume_pending: bool = False) -> bool:
     """Real Slack posts + production handler, with a verified-human event envelope.
 
     User-token posts are app-authored (bot_id), so Socket Mode's bot filter ignores
@@ -253,6 +308,8 @@ async def send_remaining(channel: str) -> bool:
     human, agent = await user.auth_test(), await bot.auth_test()
     if human.get("bot_id") or human["team_id"] != agent["team_id"]:
         raise SystemExit("Sender must be a verified human in Hazel's workspace")
+    if resume_pending:
+        await recover_pending(channel, user, bot, human, agent)
     current = messages()
     completed = max((m.turn for m in current), default=0)
     with session() as db:
@@ -312,13 +369,18 @@ async def send_remaining(channel: str) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report-only", action="store_true")
+    parser.add_argument(
+        "--resume-pending",
+        action="store_true",
+        help="Retry an incomplete original model turn without renumbering",
+    )
     parser.add_argument("--send", metavar="DM_CHANNEL", help="Explicitly send the remaining turns")
     args = parser.parse_args()
     evidence = get_settings().state_path / "scenarios" / "slack-live-demo"
     evidence.mkdir(parents=True, exist_ok=True)
     if args.send:
         logging.basicConfig(level=logging.ERROR)
-        if not asyncio.run(send_remaining(args.send)):
+        if not asyncio.run(send_remaining(args.send, resume_pending=args.resume_pending)):
             return
         args.report_only = True
     if not args.report_only:

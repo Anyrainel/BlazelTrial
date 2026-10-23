@@ -823,3 +823,13 @@ Live turn 220 declined to message an address because it was forgotten; both addr
 terms have zero matches through memory grep. British draft at 261 uses colourful;
 American draft at 301 uses neighborhood/colors. Checks accept representative spelling
 rather than requiring the model to repeat every word from the request verbatim.
+
+Turn 350 completed a real first-read document map/reduce (50 doc-note calls), with
+three short bullets covering the September 29 launch, beta/freeze, budget and review.
+At turn 382 a memory preference worker exhausted structured-output retries; the
+request was already stored but had no answer. Preserved the error log, then replayed
+core._reply for that original stored message, using the normal reply persistence,
+index, upkeep and adapter receipt/delivery path. No new user turn or canned response.
+The explicit --resume-pending harness validates the latest human Slack text against
+the sole incomplete stored turn before recovery. Production code is unchanged.
+Recovered successfully and continued at 383; later checkpoint numbering is intact.
