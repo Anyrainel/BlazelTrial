@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 Status = Literal["found", "not_found", "conflicting", "incomplete"]
 _REF_PATTERN = r"\b(?:msg|rec|psg|note|ckpt):\d+\b"
 _PROMPTS = Path(__file__).parent
+_LIST_TEXT_CHARS = 140  # per record in a survey, so dozens fit in one tool result
+_USER_TEXT_CHARS = 1500  # the user's message shown to the write worker
 
 
 class Mode(StrEnum):
@@ -137,6 +139,8 @@ def _fmt_hits(hits: list[records.Hit]) -> str:
     lines = []
     for h in hits:
         meta = [h.type, h.store, h.created_at.strftime("%Y-%m-%d")]
+        if h.role:
+            meta.append(f"by {h.role}")
         if h.type == "record":
             meta.append("current" if h.current else "superseded")
         if h.covers:
@@ -176,12 +180,20 @@ def _shown(view: records.RecordView) -> str:
 # --- tools (read-only, every mode) ------------------------------------------------------------
 
 
-def search(ctx: RunContext[WorkerDeps], query: str, k: int = 5) -> str:
-    """Keyword (BM25) search over memory records, this conversation's messages and notes."""
+def search(ctx: RunContext[WorkerDeps], query: str, k: int = 5, newest_first: bool = False) -> str:
+    """Keyword (BM25) search over memory records, this conversation's messages and notes.
+
+    Args:
+        query: Words likely to appear in the source.
+        k: Hits to return (max 10).
+        newest_first: Order the hits by date, newest first, to find later corrections.
+    """
     if stop := ctx.deps.last_step(ctx):
         return stop
     try:
-        hits = records.search_memory(ctx.deps.caller, query, store=ctx.deps.store, k=k)
+        hits = records.search_memory(
+            ctx.deps.caller, query, store=ctx.deps.store, k=k, newest_first=newest_first
+        )
     except MemoryAccessError as exc:
         return f"Error: {exc}"
     return ctx.deps.spend(_fmt_hits(hits))
@@ -205,15 +217,22 @@ def grep(ctx: RunContext[WorkerDeps], text: str) -> str:
     return deps.spend(found.render())
 
 
-def list_records(ctx: RunContext[WorkerDeps], kind: str | None = None, k: int = 10) -> str:
-    """The newest current records (all topics), optionally one kind: fact, preference or task."""
+def list_records(ctx: RunContext[WorkerDeps], kind: str | None = None, k: int = 25) -> str:
+    """Survey the newest current records of all topics (max 50; text shortened, `read` shows
+    one in full), optionally one kind: fact, preference or task."""
     if stop := ctx.deps.last_step(ctx):
         return stop
     try:
         views = records.list_current(ctx.deps.caller, store=ctx.deps.store, kind=kind, k=k)
     except MemoryAccessError as exc:
         return f"Error: {exc}"
-    lines = [f"{_shown(v)} [{v.created_at:%Y-%m-%d}]" for v in views]
+    lines = [
+        f"{v.ref} ({v.store} {v.kind} '{v.key}', {v.created_at:%Y-%m-%d}): "
+        f"{records._clip(v.text, _LIST_TEXT_CHARS)}"
+        for v in views
+    ]
+    if len(views) >= min(k, records.MAX_LIST):
+        lines.append("(more current records may exist; use search for a specific topic)")
     return ctx.deps.spend("\n".join(lines) or "No records.")
 
 
@@ -279,13 +298,9 @@ def save(
     """
     deps = ctx.deps
     try:
-        clash = [
-            v
-            for v in records.list_current(deps.caller, store=store, k=records.MAX_K)
-            if v.key == records.normalize_key(key) and v.kind == kind
-        ]
+        clash = records.current_with_key(deps.caller, store=store, kind=kind, key=key)
         if clash:
-            return f"Not saved: {clash[0].ref} is already the current '{key}' record; revise it."
+            return f"Not saved: {clash.ref} is already the current '{key}' record; revise it."
         view = records.write(
             deps.caller,
             store=store,
@@ -480,7 +495,7 @@ async def ask(caller: MemoryCaller, question: str, store: str = "both") -> Memor
     try:
         with call_context(purpose="memory_search"):
             result = await get_worker(Mode.READ).run(
-                f"Question: {question[:1000]}\nStore: {store}",
+                f"Today: {records.today()}\nQuestion: {question[:1000]}\nStore: {store}",
                 deps=deps,
                 usage_limits=UsageLimits(request_limit=settings.memory_search_max_requests),
             )
@@ -502,6 +517,19 @@ async def ask(caller: MemoryCaller, question: str, store: str = "both") -> Memor
         settings.memory_search_tool_chars - deps.chars_left,
     )
     return final
+
+
+def _current_message_text(ref: str | None) -> str | None:
+    """The user's message being answered, so a write can be checked against what was said
+    (the main model only passes its own one-sentence summary of it)."""
+    parsed = refs.parse(ref or "")
+    if parsed is None or parsed.type != "msg":
+        return None
+    with session() as s:
+        m = s.get(Message, parsed.id)
+    if m is None or m.forgotten:
+        return None
+    return m.text[:_USER_TEXT_CHARS]
 
 
 async def work(
@@ -527,10 +555,13 @@ async def work(
         mode=mode,
         current_msg_ref=current_msg_ref,
     )
+    prompt = f"Today: {records.today()}\n{task[:1500]}"
+    if mode == Mode.WRITE and (said := _current_message_text(current_msg_ref)):
+        prompt += f"\n\nThe user's message this turn (what they actually said):\n{said}"
     try:
         with call_context(purpose=f"memory_{mode.value}"):
             result = await get_worker(mode).run(
-                task[:1500], deps=deps, usage_limits=UsageLimits(request_limit=limit)
+                prompt, deps=deps, usage_limits=UsageLimits(request_limit=limit)
             )
         outcome = result.output
     except UsageLimitExceeded:

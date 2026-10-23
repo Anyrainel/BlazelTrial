@@ -86,7 +86,7 @@ Ids are never reused. Malformed or unknown refs get the same "not found" reply.
 ### Low-level handlers (subagent tools; bounded)
 | Handler | Returns | Bounds |
 |---|---|---|
-| `search(caller, query, store, k, sources)` | hits: ref, type (record/message/note), store, excerpt, current, created_at, `found_by`, turn (messages), covers (notes) | k ≤ 10; excerpt ≤ 300 chars; ≤ 2,400 excerpt chars in total; one message hit per turn |
+| `search(caller, query, store, k, sources, newest_first)` | hits: ref, type (record/message/note), store, excerpt, current, created_at, `found_by`, turn and role (messages), covers (notes) | k ≤ 10; `newest_first` orders the chosen hits by date; excerpt ≤ 300 chars; ≤ 2,400 excerpt chars in total; one message hit per turn |
 | `read(caller, ref)` | text (≤ 2,000 chars), metadata, version links, sources; notes: exact covered `msg:` refs | one item |
 | `expand(caller, msg_ref, before, after)` | adjacent messages of the same session | ≤ 5 each side |
 | `versions(caller, rec_ref)` | the record's chain, oldest → newest | ≤ 20 |
@@ -113,7 +113,7 @@ reads any of these back with `read_memory(ref)` (bounded; session-private).
 recursion, trusted caller, shared budget guard; `purpose=memory_search|memory_write|memory_forget`)
 with `worker.md` (shared principles) plus one prompt per mode. Tools by mode: read =
 `search grep list_records read expand versions`; write = read + `save revise`; forget = read +
-`erase`. `grep` is an exact case/whitespace-insensitive scan (numbers, codes, names that BM25
+`erase`. `list_records` surveys up to 50 current records (text shortened); `save` finds a same-key record by query, not by listing. Every worker task states today's date, and a write task ends with the user's own message text. `grep` is an exact case/whitespace-insensitive scan (numbers, codes, names that BM25
 ranks badly); scoped to the caller's visibility, except in forget mode where it covers every
 conversation, saved outputs and sent messages. A step limit returns `incomplete` with what was
 already done.

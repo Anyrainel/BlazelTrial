@@ -3,5 +3,6 @@ assistant. The note helps find this stretch later; the original messages stay av
 
 Write at most 120 words of plain prose. Keep concrete details: names, places, dates, numbers,
 decisions, plans, open questions, and the words people actually used for key things. Mark
-anything tentative as tentative and note corrections. Skip greetings and filler. Refer to the
-user as "the user". Start with the turn range given.
+anything tentative as tentative and note corrections. Say who said what: what the user stated is
+a fact about the user; what the assistant said is "the assistant said", never a fact. Skip
+greetings and filler. Refer to the user as "the user". Start with the turn range given.

@@ -1,5 +1,24 @@
 # Work log
 
+## Memory review fixes (2026-10-22 Pacific)
+
+Final memory review found, and this change fixes: (1) `save`'s duplicate-key guard listed only
+the newest 10 records, so an older same-key record was missed (now a query by key; `list_records`
+surveys up to 50, text shortened); (2) no prompt stated the date, so relative dates could not be
+made absolute (chat instructions end with it; every worker task starts with it); (3) the write
+worker saw only the main model's summary of the change and the current message was cited
+regardless (the user's own message text is now appended to write tasks; prompt: store only what
+the user stated, skip hypotheticals, keep hedges); (4) search had no recency and no role label
+(`newest_first`, `by user|assistant` in hits; prompts: assistant messages are not evidence of what
+the user said; check later corrections for current-state questions); note writer attributes
+assistant claims. Secrets screening was proposed and declined (out of scope for Hazel).
+Offline: 229 passed, ruff clean; each fix mutation-checked.
+Live Bonsai (S1, 4, 8, 9): S1 and S9 PASS; 93 calls, max input 4,114, no violations. S4 failed and
+S8 failed once (passed on rerun). S4 memory was correct (British superseded by American, history
+answered); the draft copied "colours" from the user's own request. Baseline (HEAD) S4 was 1/2,
+current code 1/4, so flaky rather than a clear regression. The standing-preferences intro now says
+rules also apply to wording copied from the user's request: S4 3/4 afterwards (small samples).
+
 ## Remaining temporary-artifact audit (2026-10-22 Pacific)
 
 Audited tracked files, untracked files, project-root/hidden directories, nested source

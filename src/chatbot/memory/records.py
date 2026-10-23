@@ -38,6 +38,7 @@ MAX_SOURCES = 10
 MAX_READ_CHARS = 2000
 MAX_EXCERPT = 300
 MAX_K = 10
+MAX_LIST = 50  # current records one listing may return (a survey of topics, not search hits)
 MAX_EXPAND = 5
 MAX_VERSIONS = 20
 MAX_NOTE = 1500
@@ -125,6 +126,12 @@ class Hit:
     found_by: tuple[str, ...]  # candidate lists that returned it: bm25 / notes / vectors
     turn: int | None = None  # message hits
     covers: str | None = None  # note hits: "msg:a..msg:b (n messages)"
+    role: str | None = None  # message hits: "user" | "assistant"
+
+
+def today() -> str:
+    """Today's local date (ISO). Prompts state it so relative dates can be made absolute."""
+    return datetime.now().astimezone().date().isoformat()
 
 
 def _clip(text: str, limit: int) -> str:
@@ -494,7 +501,7 @@ def versions(caller: MemoryCaller, ref: str) -> list[RecordView]:
 def list_current(
     caller: MemoryCaller, *, store: str = "both", kind: str | None = None, k: int = 10
 ) -> list[RecordView]:
-    """The newest current records the caller may see, to survey a topic without keywords."""
+    """The newest current records the caller may see (at most MAX_LIST), to survey topics."""
     if store not in ("session", "long_term", "both"):
         raise MemoryAccessError("store must be session, long_term or both")
     stores = {Store.SESSION, Store.LONG_TERM} if store == "both" else {Store(store)}
@@ -514,7 +521,33 @@ def list_current(
             if r.store in stores
             and (r.store == Store.LONG_TERM or r.session_id == caller.session_id)
         ]
-        return [_view(s, r, with_sources=False) for r in visible[: max(1, min(k, MAX_K))]]
+        return [_view(s, r, with_sources=False) for r in visible[: max(1, min(k, MAX_LIST))]]
+
+
+def current_with_key(caller: MemoryCaller, *, store: str, kind: str, key: str) -> RecordView | None:
+    """The current record of this store and kind under `key`, however many records exist.
+
+    A query by key (not a listing), so a duplicate-save guard cannot be fooled by a long list."""
+    try:
+        store_, kind_ = Store(store), RecordKind(kind)
+    except ValueError:
+        raise MemoryAccessError("invalid store or kind") from None
+    with session() as s:
+        rows = s.exec(
+            select(MemoryRecord)
+            .where(
+                MemoryRecord.user_id == caller.user_id,
+                MemoryRecord.store == store_,
+                MemoryRecord.kind == kind_,
+                MemoryRecord.key == normalize_key(key),
+                col(MemoryRecord.superseded_at).is_(None),
+            )
+            .order_by(col(MemoryRecord.id).desc())
+        ).all()
+        for r in rows:
+            if store_ == Store.LONG_TERM or r.session_id == caller.session_id:
+                return _view(s, r, with_sources=False)
+    return None
 
 
 # --- saved tool outputs and checkpoints (written by the context fitter) -------------------------
@@ -611,6 +644,7 @@ def search_memory(
     store: str = "both",
     k: int = 5,
     sources: tuple[str, ...] = DEFAULT_SOURCES,
+    newest_first: bool = False,
 ) -> list[Hit]:
     """Fused BM25 search over memory records, raw session messages and episode notes, plus
     optional vector candidates for messages.
@@ -618,7 +652,9 @@ def search_memory(
     Every candidate list is filtered by owner/store inside SQL before ranking. Raw messages are
     always searched on their own list, so a detail a note omitted (or got wrong) is still
     found. Message hits are deduplicated per turn; note hits say which messages they cover.
-    The total excerpt text is capped at MAX_RESULT_CHARS.
+    The total excerpt text is capped at MAX_RESULT_CHARS. Relevance picks the hits;
+    `newest_first` only orders those hits by date (ties keep relevance order), so a later
+    correction is read before the statement it replaced.
     """
     if store not in ("session", "long_term", "both"):
         raise MemoryAccessError("store must be session, long_term or both")
@@ -694,6 +730,7 @@ def search_memory(
                     m.created_at,
                     via,
                     turn=m.turn,
+                    role=who,
                 )
             elif kind == "passage" and (p := _visible_passage(s, caller, id_)):
                 hit = Hit(
@@ -724,4 +761,7 @@ def search_memory(
                 break
             used += len(hit.excerpt)
             hits.append(hit)
+    if newest_first:
+        # stable: relevance breaks ties; passages carry no date, so they go last
+        hits.sort(key=lambda h: (h.type != "passage", h.created_at), reverse=True)
     return hits

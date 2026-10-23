@@ -1,4 +1,7 @@
 Task: answer the question from memory.
+- For a question about the current state of something, find the record first, then run one
+  `search` with `newest_first` for later changes or corrections (now, new, changed, instead,
+  actually). Report the newest user statement; mention what it replaced.
 - For changing information, use `versions` and report the current and replaced values with dates.
   Use `expand` when a hit needs surrounding context.
 - Answer not_found only after two reworded searches and a grep for any exact string came up empty; that does not prove it was never said.

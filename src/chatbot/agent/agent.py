@@ -41,7 +41,8 @@ def preference_block(user_id: str, thread_id: str) -> str:
     intro = (
         "## Standing preferences\n"
         "The user's rules for how you write and behave. Follow them in everything you do; "
-        "they override your defaults. Change them only through `update_memory`.\n"
+        "they override your defaults, and they apply to wording you copy from the user's "
+        "request or earlier messages too. Change them only through `update_memory`.\n"
     )
     return intro + "\n".join(lines)
 
@@ -52,14 +53,16 @@ def chat_instructions(ctx: RunContext[ChatDeps]) -> str:
     chat templates such as Bonsai's reject ("System message must be at the beginning")."""
     parts = [prompts.load("system"), registry.instructions_block()]
     parts.append(preference_block(ctx.deps.user_id, ctx.deps.thread_id))
+    parts.append(f"Today's date: {records.today()}.")  # last: it changes only once a day
     return "\n\n".join(p for p in parts if p)
 
 
 def preference_reserve_tokens() -> int:
-    """Worst-case size of the preference block, reserved when sizing the rest of the context."""
+    """Worst-case size of the preference block (and the date line), reserved when sizing the
+    rest of the context."""
     settings = get_settings()
     chars = settings.preferences_max_chars + settings.session_preferences_max_chars
-    return int(chars / settings.estimate_chars_per_token) + 60
+    return int(chars / settings.estimate_chars_per_token) + 80
 
 
 @cache
