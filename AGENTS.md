@@ -119,4 +119,6 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
   remove retained state after review. Ad hoc checks must likewise use a temporary directory
   under `.state/scenarios/` and clean it in `finally` after closing child processes/DB handles.
   Do not leave review scripts or screenshots in the live `.state/` root.
+- Run the live Slack worker from the current checkout with `chatbot slack`; temporary
+  reviewed source snapshots must be retired after review, not left as hidden deployments.
 - Done = `pytest` green + relevant scenario PASS + no budget violation in the call log.

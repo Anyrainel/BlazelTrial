@@ -1,5 +1,25 @@
 # Work log
 
+## Remove obsolete Slack source snapshot (2026-10-22 Pacific)
+
+User questioned .state/runtime and requested cleanup. Verified it contained a source
+archive named slack-2014ed5, not a separate state store or Slack requirement. Historical
+reason: pin a reviewed implementation during concurrent edits (see Slack evaluation).
+The two Python processes were one launcher/child pair running run_reviewed_slack.py;
+its sys.path selected archived src while config was patched to use the main .env and
+.state/state.db. Keeping this deployment had allowed Slack to lag behind the checkout.
+
+Stopped only that verified launcher/child pair, started the normal installed chatbot slack
+command from the repository, and confirmed source imports resolve to src/chatbot and the
+same .state root. Slack SDK logs confirm a new Socket Mode session and Bolt running.
+Recycled .state/runtime (about 1.2 MiB) after verifying no process still used it and there
+were no symlinks. Live database/docs/model state were preserved. Normal logs now live in
+.state/logs/slack.out.log and slack.err.log. No Slack messages were sent for this check;
+connection success does not constitute a new end-to-end delivery scenario PASS.
+No application code changed; earlier 214-test validation remains the current code check.
+Use the normal checkout launcher going forward; temporary reviewed snapshots should not
+be left as the live deployment after review ends.
+
 ## Automatic evaluation cleanup (2026-10-22 Pacific)
 
 User requested automatic removal of future temporary evaluation state. Assumption: clean

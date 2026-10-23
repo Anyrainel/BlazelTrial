@@ -241,6 +241,12 @@ with the implementation; prior provider settings and user data were preserved.
 
 ### Final reviewed build and runtime
 
+**Runtime update (2026-10-22 Pacific):** the archived source described below was retired
+during cleanup. Slack now runs the normal `chatbot slack` command from the current checkout,
+using the same `.env` and `.state/state.db`. The new Socket Mode session connected and Bolt
+reported running; no new Slack message/delivery scenario was performed. The snapshot was
+recycled. The evidence below describes the historical reviewed build, not the live version.
+
 Git snapshot **2014ed5** passed **141 offline tests in 25.72 s**, plus Ruff check
 and format verification over all tracked Python directories (67 files). This
 isolated check pins the Slack implementation while unrelated budget/frontend
