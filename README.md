@@ -33,7 +33,8 @@ Then edit `.env`:
 - All state lives in `STATE_DIR` (default `.state/`, gitignored): `state.db`, `docs/`,
   `logs/llm_calls.jsonl` and the embedding model cache.
 
-Generate the document corpus that `fetch_doc` reads (4 docs of 20k–40k tokens, incl. `Q3-plan`):
+The agent can discover document ids with `list_docs` (paginated), then use `fetch_doc`
+or `search_doc` to read them. Generate the corpus (4 docs of 20k–40k tokens, incl. `Q3-plan`):
 
 ```bash
 uv run python scripts/gen_docs.py

@@ -57,7 +57,7 @@ def test_registry_discovers_capabilities_and_loads_them_upfront():
     names = [c.name for c in registry.all_capabilities()]
     assert names == sorted(names) and {"documents", "linkedin", "messaging"} <= set(names)
     tools = set(get_agent()._function_toolset.tools)
-    assert {"fetch_doc", "search_doc", "send_message", "write_linkedin_post"} <= tools
+    assert {"list_docs", "fetch_doc", "search_doc", "send_message", "write_linkedin_post"} <= tools
     block = registry.instructions_block()
     assert all(f"### {n}" in block for n in names)
     assert all(

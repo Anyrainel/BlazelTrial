@@ -116,6 +116,60 @@ def test_unknown_doc_lists_what_exists(docs):
     assert "Q3-plan" in msg and "brand-guidelines" in msg
 
 
+def test_list_docs_is_available_through_core(docs):
+    seen: list[str] = []
+    chat = build_model(get_settings(), raw=tool_then_answer("list_docs", {}, seen))
+    with get_agent().override(model=chat):
+        core.send("me", "A", "What documents are available?")
+    assert "Q3-plan" in seen[0] and "brand-guidelines" in seen[0]
+    assert "next_offset" in seen[0]
+
+
+def test_list_docs_pages_only_readable_ids_without_loading_contents(monkeypatch):
+    from chatbot.capabilities.docs import _unknown, list_docs
+
+    root = get_settings().docs_path
+    root.mkdir(parents=True, exist_ok=True)
+    for i in range(23):
+        (root / f"doc-{i:02}.md").write_text("private document contents", encoding="utf-8")
+    (root / "doc-00.txt").touch()  # one id, even with both supported extensions
+    (root / "ignored.json").touch()
+    (root / "directory.md").mkdir()
+    monkeypatch.setattr(reader, "load", lambda _: pytest.fail("Catalog must not load docs"))
+
+    first = list_docs(None)
+    second = list_docs(None, offset=first["next_offset"])
+    last = list_docs(None, offset=second["next_offset"])
+    assert first == {
+        "doc_ids": [f"doc-{i:02}" for i in range(10)],
+        "total": 23,
+        "next_offset": 10,
+    }
+    assert second["next_offset"] == 20
+    assert last == {"doc_ids": ["doc-20", "doc-21", "doc-22"], "total": 23, "next_offset": None}
+    assert list_docs(None, offset=99)["doc_ids"] == []
+    assert list_docs(None, limit=2)["next_offset"] == 2
+    assert "doc-10" not in _unknown("missing")
+
+
+def test_list_docs_empty_or_missing_folder():
+    from chatbot.capabilities.docs import list_docs
+
+    empty = {"doc_ids": [], "total": 0, "next_offset": None}
+    assert list_docs(None) == empty
+    get_settings().docs_path.mkdir(parents=True, exist_ok=True)
+    assert list_docs(None) == empty
+
+
+@pytest.mark.parametrize("args", [{"limit": 0}, {"limit": 11}, {"offset": -1}])
+def test_list_docs_schema_rejects_unbounded_pages(args):
+    from pydantic_core import ValidationError
+
+    tool = get_agent()._function_toolset.tools["list_docs"]
+    with pytest.raises(ValidationError):
+        tool.function_schema.validator.validate_python(args)
+
+
 def test_small_docs_come_back_whole(docs):
     path = get_settings().docs_path / "tiny.md"
     path.write_text("# Tiny\n\nThe offsite is on May 3.", encoding="utf-8")

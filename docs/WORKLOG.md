@@ -2,6 +2,25 @@
 
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
+## Agent document catalog (2026-10-22 Pacific)
+
+Added `list_docs` to the existing documents capability so the agent can discover ids
+without guessing a missing document. Assumption: list the same configured DOCS_DIR
+catalog used by fetch/search, with no document contents or filesystem paths. Results
+are sorted, deduplicated ids, total count and next_offset; schema bounds pages to
+1–10 ids and nonnegative offsets. Missing/empty folders return an empty catalog.
+Missing-document errors now show only the first ten ids and point to list_docs,
+avoiding an unbounded catalog in that alternate tool output. Updated instructions
+and README; no new stack decision.
+
+Validation: 206 offline tests pass, including core tool invocation, pagination,
+empty/missing folders, supported-file filtering, duplicate ids and schema bounds.
+Ruff and diff checks pass. Isolated live Bonsai catalog scenario PASS: agent called
+list_docs and named all three test ids; two model calls, maximum 2,736 input tokens,
+no budget violations. Evidence in .state/list-docs-check (gitignored). The smoke
+script initially lacked the repository import path for scenarios.checks; corrected
+the test harness before running the live check.
+
 ## Soft forgetting and context settings (2026-10-22 Pacific)
 
 User explicitly changed the earlier hard-only forget policy: retain chat text for users but

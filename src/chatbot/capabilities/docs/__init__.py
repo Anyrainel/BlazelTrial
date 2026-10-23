@@ -1,7 +1,9 @@
-"""Document tools: fetch_doc (full text or distilled note) and search_doc (passages)."""
+"""Document tools: list available ids, fetch text/notes, and search passages."""
 
 from datetime import UTC, datetime
+from typing import Annotated
 
+from pydantic import Field
 from pydantic_ai import RunContext
 from sqlmodel import select
 
@@ -13,8 +15,31 @@ from chatbot.memory.models import DocRef
 
 
 def _unknown(doc_id: str) -> str:
-    names = ", ".join(reader.available()) or "(none)"
-    return f"No document named {doc_id!r}. Available documents: {names}."
+    names = ", ".join(sorted(set(reader.available()))[:10]) or "(none)"
+    return (
+        f"No document named {doc_id!r}. Available documents (first 10): {names}. "
+        "Use list_docs to browse all available ids."
+    )
+
+
+def list_docs(
+    ctx: RunContext,
+    offset: Annotated[int, Field(ge=0)] = 0,
+    limit: Annotated[int, Field(ge=1, le=10)] = 10,
+) -> dict[str, object]:
+    """List available document ids in alphabetical order, without reading their contents.
+
+    Pass an id to fetch_doc or search_doc. If next_offset is not null, call list_docs
+    with that offset for the next page. Each page contains at most 10 ids.
+    """
+    names = sorted(set(reader.available()))
+    page = names[offset : offset + limit]
+    end = offset + len(page)
+    return {
+        "doc_ids": page,
+        "total": len(names),
+        "next_offset": end if end < len(names) else None,
+    }
 
 
 def remember_ref(thread_id: str, doc_id: str) -> None:
@@ -64,5 +89,10 @@ def search_doc(ctx: RunContext, doc_id: str, query: str) -> str:
 
 
 CAPABILITY = capability(
-    "documents", "Read and search the user's documents.", __file__, fetch_doc, search_doc
+    "documents",
+    "List, read and search the user's documents.",
+    __file__,
+    list_docs,
+    fetch_doc,
+    search_doc,
 )
