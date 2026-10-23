@@ -37,3 +37,27 @@ Validation: 206 offline tests, ruff and formatting pass. Initial live run: 213 c
 violations in either. State and structured reports are under `.state/prompt-review-20261022`
 and `.state/prompt-review-recheck-20261022`. No new string-matching prompt tests were added;
 existing behavior tests and real-model scenarios check the consequences of the rewrite.
+
+## Follow-up: remove duplication (2026-10-22 Pacific)
+
+Compared instructions/tool schemas with the failure reports above and in WORKLOG.md.
+Most of the system and memory wording addresses observed failures rather than generic
+advice. Final changes are confined to document, messaging and LinkedIn capability text:
+remove repeated explanations, shorten tool descriptions, keep pagination in list_docs's
+schema description and note details in fetch_doc's. Preserve exact facts, document lookup,
+fresh recipient resolution, draft-versus-send routing, simulated delivery, preference
+handoff, LinkedIn limits and verbatim post output.
+
+The existing cost-report estimate for always-loaded capabilities fell from 2,349 to 2,150
+tokens (~8.5%, ~199 estimated tokens saved per main-chat request). These are character-based
+estimates, not a provider tokenizer comparison. The system prompt, memory instructions,
+memory tool descriptions, all worker prompts and note/writer prompts are unchanged.
+No tool parameters, defaults, handlers, validation, model selection or budgeting changed.
+
+Rejected broader cuts: the initial cleanup failed S4 by reusing British wording after a
+switch to American. Restoring draft-specific reminders was followed by S4/S5 passing,
+but S8 returned a stale manager name. Restoring system/recall wording alone still failed
+S8. A control using all original HEAD prompt/tool text passed S8. These stochastic runs
+do not prove which clause mattered; conservatively reverted every system/memory edit.
+The broader first run passed S1/S5/S6/S7/S8 but failed S4. Final focused verification is
+recorded in WORKLOG.md. No new string-matching prompt tests were added.

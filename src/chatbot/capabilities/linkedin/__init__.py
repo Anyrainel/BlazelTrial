@@ -58,8 +58,7 @@ def get_writer() -> Agent[dict, LinkedInPost]:
 
 
 async def write_linkedin_post(ctx: RunContext, brief: str) -> str:
-    """Write a LinkedIn post from a factual brief. Returns the final post, which is shown to
-    the user exactly as returned.
+    """Write a LinkedIn post from a brief; the user receives the validated post verbatim.
 
     Args:
         brief: What to announce, the key facts/dates verbatim, audience, requested tone, and

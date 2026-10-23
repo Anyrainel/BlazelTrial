@@ -729,3 +729,30 @@ UI change is needed; already-running processes must restart to clear cached prom
 Validation: 221 offline tests pass; ruff and diff checks pass. Live scenario 1 PASS:
 16 calls, maximum 2,431 input tokens, no budget violations or preflight refusals.
 Temporary scenario state was automatically removed.
+
+## Conservative prompt/spec cleanup (2026-10-22 Pacific)
+
+Audited all instruction files and tool descriptions against prior prompt regressions.
+Final scope: shorten repeated document, messaging and LinkedIn prose/tool descriptions.
+Keep pagination, verbatim facts, fresh recipient lookup, simulated delivery, preference
+handoff and validated LinkedIn output. System and memory prompts/specs remain unchanged;
+worker and document-note contracts were already lean. Review in PROMPT_REVIEW.md.
+Capability cost estimate: 2,349 -> 2,150 tokens/request (~199 saved, 8.5%); character-based
+estimate, not a tokenizer benchmark. AST comparison confirmed Python edits only changed
+docstrings; no tool signatures or executable behavior changed.
+
+Rejected broader trimming after live failures: first pass S1/S5/S6/S7/S8 PASS, S4 FAIL
+(British wording reused after American correction), 163 calls, max 4,326 input tokens.
+Restoring draft reminders: S4/S5 PASS, S8 FAIL, 64 calls, max 3,999. Restoring system and
+recall wording alone still failed S8 (19 calls, max 2,354). Original HEAD prompt/tool text
+control passed S8 (26 calls, max 3,193). One stochastic run cannot identify a causal clause;
+reverted all system/memory edits conservatively. AI mistake caught: treating duplicated
+draft guidance as expendable despite the historical failure. Baseline probe initially
+omitted the runner's required --state-dir argument; corrected before running inference.
+All sent calls in these runs stayed within budget. All temporary state automatically
+removed after closing subprocesses. Final offline checks: 221 tests pass, ruff/format/diff
+checks pass. Final focused live results follow.
+
+Final wording: S4/S5/S8 PASS, 75 real Bonsai calls, maximum 4,108 input tokens, no budget
+violations or preflight refusals. Temporary state removed. S1/S6/S7 passed on the earlier
+broader wording; no full nine-scenario rerun on the final conservative edit.

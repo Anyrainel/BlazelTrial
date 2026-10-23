@@ -27,10 +27,10 @@ def list_docs(
     offset: Annotated[int, Field(ge=0)] = 0,
     limit: Annotated[int, Field(ge=1, le=10)] = 10,
 ) -> dict[str, object]:
-    """List available document ids in alphabetical order, without reading their contents.
+    """List document ids alphabetically without reading contents.
 
     Pass an id to fetch_doc or search_doc. If next_offset is not null, call list_docs
-    with that offset for the next page. Each page contains at most 10 ids.
+    with that offset for the next page.
     """
     names = sorted(set(reader.available()))
     page = names[offset : offset + limit]
@@ -54,10 +54,9 @@ def remember_ref(thread_id: str, doc_id: str) -> None:
 
 
 async def fetch_doc(ctx: RunContext, doc_id: str) -> str:
-    """Read a document from the user's documents folder by its id.
+    """Read a document by id: full text if short, otherwise a summary with key facts verbatim.
 
-    Short documents come back in full. Long ones come back as a note: a summary plus the key
-    facts (dates, numbers, names) verbatim. Use search_doc for details the note doesn't cover.
+    Use search_doc for details missing from the note.
     """
     try:
         doc = reader.load(doc_id)
@@ -75,8 +74,7 @@ async def fetch_doc(ctx: RunContext, doc_id: str) -> str:
 
 
 def search_doc(ctx: RunContext, doc_id: str, query: str) -> str:
-    """Find the passages of a document most relevant to a question or keywords. Use it for
-    details that a fetch_doc note doesn't include."""
+    """Find document passages matching a question or keywords."""
     try:
         doc = reader.load(doc_id)
     except reader.DocNotFoundError:
