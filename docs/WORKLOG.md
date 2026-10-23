@@ -871,3 +871,19 @@ document data and delivery receipts. Live HTTP /threads lists only Slack DM.
 No inference was needed for this data cleanup; no model scenario or new usage.
 Existing unrelated runtime/log modifications were left in place.
 Validation: 230 offline tests pass; git diff --check passes.
+
+## Repeat recording cleanup and Sonnet switch (2026-10-23 Pacific)
+
+User requested another HTTP session cleanup, Sonnet 5.5 and an instance restart.
+Removed s-5020a95f and s-b52b933c (eight messages), their derived manager record 27
+and its source, using existing hard session forgetting and deleting empty thread
+rows. Before/after hashes verify every unrelated persisted model row unchanged,
+including all 1,040 Slack messages and associated memory and receipts.
+Changed only LLM_PROVIDER=anthropic and LLM_MODEL=claude-sonnet-5-5 in the private
+.env. Restarted current-checkout HTTP and Slack services so both reload settings.
+HTTP health reports anthropic:claude-sonnet-5-5; /threads lists only Slack DM;
+Slack startup confirms Socket Mode connected. No Slack messages were posted.
+Live scenario 1 PASS on Sonnet in automatically cleaned temporary state: 16 model
+calls, max 3,395 input tokens, no budget violations or preflight refusals.
+Existing unrelated state/log changes remain uncommitted.
+Validation: 230 offline tests pass; git diff --check passes; temporary scenario state removed.
