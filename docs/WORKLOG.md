@@ -792,3 +792,22 @@ Automation mistake: an initial reply wait matched the previous reply before Slac
 rendered the new request, briefly queueing turns 2-6. Verified all five completed
 through the real worker; subsequent turns wait for the new request then its reply.
 Initial validation: 230 offline tests pass. Live checkpoints/results to follow.
+
+Continuation: turns 1-181 were sent through the Slack UI/Socket Mode. Browser
+focus changes and a REPL closure counter drift introduced repeated/skipped filler;
+verified actual source turns from the DB before each subsequent checkpoint.
+Required turn-20 detail remains exactly at 20. First address/forget at 80/110,
+second address/forget at 135/181 (both within the authorized 50-250 range).
+The user asked to accelerate. Subsequent turns use real Web API posts plus an
+explicit verified-human event envelope passed to production handle_event, which
+calls core.send_async and posts its generated answer using the real bot client.
+This exercises the Slack adapter, model, memory and delivery code, but does NOT
+claim Socket Mode delivery for turns 182-520. No fabricated assistant replies.
+A direct user-token attempt was ignored (Slack app-authors it with bot_id);
+unaccepted probes were removed. A proposed allowlist exception was tested then
+reverted; no production filtering change retained. Ctrl-C of an experimental
+runner also stopped its process-group worker; caught by process inventory and
+restarted from the checkout before resuming. Current worker stays connected.
+The test plan and independent read-only checks live in scenarios/slack_live_demo.py;
+all runtime evidence/transcripts remain gitignored. The requested live demo stays
+in the active DB and Slack; no isolated fake history or answers are substituted.
