@@ -22,7 +22,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument("--only", default="1,2,3,4,5,6,7", help="comma list of scenario numbers")
+    p.add_argument("--only", default="1,2,3,4,5,6,7,8,9", help="comma list of scenario numbers")
     p.add_argument("--state-dir", default=None, help="state dir (default: fresh under .state/)")
     p.add_argument("--turns", type=int, default=500, help="synthetic Slack history length")
     p.add_argument("--quiet", action="store_true", help="don't print the conversation")
@@ -37,10 +37,6 @@ os.environ["STATE_DIR"] = str(STATE)  # before chatbot reads its settings
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 sys.path.insert(0, str(REPO))
 
-from pydantic_ai import Agent  # noqa: E402
-
-from chatbot.agent.budget import call_context  # noqa: E402
-from chatbot.agent.models import build_model  # noqa: E402
 from chatbot.capabilities.linkedin import validator  # noqa: E402
 from chatbot.capabilities.messaging import sent_messages  # noqa: E402
 from chatbot.config import get_settings  # noqa: E402
@@ -48,6 +44,7 @@ from chatbot.core import SLACK_THREAD_ID, flush, ingest, send  # noqa: E402
 from chatbot.memory.grep import find  # noqa: E402
 from chatbot.memory.messages import recent_history, thread_messages  # noqa: E402
 from chatbot.memory.records import MemoryCaller, search_memory  # noqa: E402
+from scenarios.checks import budget_problems  # noqa: E402
 from scenarios.fixtures.docs import Q3_LAUNCH_DATE, write_all  # noqa: E402
 from scenarios.fixtures.slack_history import PLANTED, generate  # noqa: E402
 
@@ -95,12 +92,6 @@ def load_history() -> None:
     )
 
 
-def judge(question: str, text: str) -> bool:
-    agent = Agent(build_model(get_settings()), output_type=bool, instructions=question)
-    with call_context(purpose="judge"):
-        return agent.run_sync(text).output
-
-
 # --- scenarios ----------------------------------------------------------------------------------
 
 
@@ -122,13 +113,18 @@ def s2() -> None:
 def s3() -> None:
     load_history()
     write_all(get_settings().docs_path)
-    say(DM, "Summarize doc Q3-plan.")
+    summary = say(DM, "Summarize doc Q3-plan.")
+    summary_ok = "lumen" in summary.lower() and len(summary.split()) >= 30
     for row in generate(100, seed=99):
         ingest("me", DM, row["user"], row["assistant"])
     flush("me", DM)
     r = say(DM, "What was the launch date in that plan?")
     launch = re.search(r"\bSept(?:ember|\.)?\s+29\b", r, re.I)  # "Sept 29" is the same date
-    record("3 Big document (+100 turns)", bool(launch) and "2026" in r)
+    record(
+        "3 Big document (+100 turns)",
+        summary_ok and bool(launch) and "2026" in r,
+        f"substantive summary={summary_ok}",
+    )
 
 
 def s4() -> None:
@@ -149,17 +145,18 @@ def s4() -> None:
 
 
 def s5() -> None:
-    say(
+    marker = "JELLYFISH-CONFETTI-742"
+    a = say(
         "s5-A",
-        "For this draft only, make it playful: a two-sentence invite to the team's Friday lunch.",
+        f"For this draft only, end the invitation with the exact phrase {marker}. "
+        "Write a two-sentence invite to the team's Friday lunch.",
     )
     d = say("s5-B", "Write a two-sentence invite to the team's Friday lunch.")
-    playful = judge(
-        "Answer true if the text below is clearly playful (jokes, puns, exclamations, whimsical "
-        "wording); false if it is neutral or simply friendly.",
-        d,
+    record(
+        "5 Stays local",
+        marker in a and marker not in d,
+        f"local instruction followed={marker in a}; leaked={marker in d}",
     )
-    record("5 Stays local", not playful, f"session-B draft playful={playful}")
 
 
 def s6() -> None:
@@ -175,7 +172,7 @@ def s6() -> None:
     # Memory, not the chat log: the address must be unreachable from every memory path (records,
     # notes, saved outputs, sent messages, search indexes, replay) while the chat history keeps
     # the conversation, flagged `forgotten`.
-    reachable = [m for m in marks if find(get_settings().default_user_id, m).total()]
+    reachable = [m for m in marks if find("me", m).total()]
     indexed = [m for m in marks if search_memory(MemoryCaller("me", DM), m)]
     replayed = [
         m
@@ -209,19 +206,72 @@ def s7() -> None:
     )
 
 
-SCENARIOS = {"1": s1, "2": s2, "3": s3, "4": s4, "5": s5, "6": s6, "7": s7}
+def s8() -> None:
+    say("s8-B", "Hello, I'll ask about reporting lines later.")
+    say("s8-A", "My manager is Elena Voss. Remember this for future conversations.")
+    old = say("s8-B", "Who is my current manager?")
+    say(
+        "s8-A",
+        "My manager changed: now it is Marco Chen, replacing Elena Voss. Remember the change.",
+    )
+    current = say("s8-B", "Who is my current manager? Give only their name.")
+    history = say("s8-A", "Who was my manager before Marco Chen?")
+    record(
+        "8 Cross-session correction",
+        "Elena Voss" in old
+        and "Marco Chen" in current
+        and "Elena Voss" not in current
+        and "Elena Voss" in history,
+    )
+
+
+def s9() -> None:
+    t = "s9-distractors"
+    for text in (
+        "For the Cedar workshop, the caterer is Juniper Kitchen and the deposit is $275.",
+        "For the Willow workshop, the caterer is Copper Spoon and the deposit is $610.",
+        "For the Cedar workshop, the room rental is $480. This is separate from catering.",
+    ):
+        say(t, text)
+    for row in generate(40, seed=193):
+        ingest("me", t, row["user"], row["assistant"])
+    flush("me", t)
+    answer = say(
+        t,
+        "Which caterer is booked for the Cedar workshop, and what is its deposit? "
+        "Give only the caterer and deposit.",
+    )
+    record(
+        "9 Distractor discrimination",
+        "Juniper Kitchen" in answer
+        and "275" in answer
+        and not any(value in answer for value in ("Copper Spoon", "610", "480")),
+    )
+
+
+SCENARIOS = {"1": s1, "2": s2, "3": s3, "4": s4, "5": s5, "6": s6, "7": s7, "8": s8, "9": s9}
 
 
 def main() -> int:
     print(f"State dir: {STATE}\nModel: {get_settings().llm_provider}:{get_settings().llm_model}\n")
+    selected = [k.strip() for k in ARGS.only.split(",") if k.strip()]
+    if not selected or any(k not in SCENARIOS for k in selected):
+        raise SystemExit("--only must contain scenario numbers 1 through 9")
+    if any(k in selected for k in ("2", "3", "6", "7")) and ARGS.turns < 500:
+        raise SystemExit("Long-history acceptance scenarios require --turns >= 500")
+    baseline = len(log_rows())
     started = datetime.now(UTC)
-    for key in [k.strip() for k in ARGS.only.split(",") if k.strip()]:
+    for key in selected:
         print(f"--- scenario {key}", flush=True)
+        before_calls = len(log_rows())
         try:
             SCENARIOS[key]()
+            issues = budget_problems(log_rows()[before_calls:], get_settings().max_input_tokens)
+            if issues:
+                record(f"{key} budget evidence", False, "; ".join(issues))
         except Exception as exc:  # a crash is a failure, not the end of the run
             record(f"{key} (crashed)", False, f"{type(exc).__name__}: {exc}")
-    all_rows = log_rows()
+    all_rows = log_rows()[baseline:]
     # The budget rule is about calls actually sent (provider-reported usage). Requests the
     # guard refused at pre-flight were never sent; they are reported separately.
     refused = [r for r in all_rows if r["error"] == "preflight_over_budget"]
@@ -237,9 +287,23 @@ def main() -> int:
         f"refused before sending (then retried smaller): {len(refused)}; "
         f"elapsed: {(datetime.now(UTC) - started).seconds}s"
     )
-    budget_ok = not over
+    issues = budget_problems(all_rows, get_settings().max_input_tokens)
+    budget_ok = not issues
+    if issues:
+        print(f"Budget evidence failures: {issues}")
     print(f"{'PASS' if budget_ok else 'FAIL'}  every sent call within budget")
-    return 0 if all(ok for _, ok, _ in results) and budget_ok else 1
+    report = {
+        "model": f"{get_settings().llm_provider}:{get_settings().llm_model}",
+        "actual_models": sorted({r["model"] for r in rows}),
+        "state_dir": str(STATE.resolve()),
+        "results": [dict(name=name, passed=ok, detail=detail) for name, ok, detail in results],
+        "budget_problems": issues,
+        "calls": len(rows),
+        "max_input_tokens": max((r["input_tokens"] for r in rows), default=0),
+    }
+    STATE.mkdir(parents=True, exist_ok=True)
+    (STATE / "eval-results.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return 0 if results and all(ok for _, ok, _ in results) and budget_ok else 1
 
 
 if __name__ == "__main__":
