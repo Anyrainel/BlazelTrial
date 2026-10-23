@@ -52,7 +52,7 @@ class Mode(StrEnum):
 
 
 class MemorySource(BaseModel):
-    ref: str = Field(description="a ref seen in a tool result, e.g. msg:12 or rec:3")
+    ref: str = Field(description="an exact source ref seen in a tool result")
     excerpt: str = Field(description="short supporting quote")
 
 
@@ -273,7 +273,7 @@ def save(
         store: long_term for durable facts and standing preferences; session for this
             conversation only.
         kind: fact, preference (how to behave or write) or task (work in progress).
-        key: short topic, e.g. "manager" or "spelling".
+        key: Short topic key.
         text: one self-contained sentence, names, numbers and dates verbatim (max 500 chars).
         sources: extra refs it rests on; the user's current message is always cited.
     """
@@ -308,7 +308,7 @@ def revise(
     history. Give the complete new truth, not a diff.
 
     Args:
-        record: ref of the current version (e.g. rec:12, from search or list_records).
+        record: Current record ref returned by search or list_records.
         text: one self-contained sentence (max 500 chars).
         sources: extra refs it rests on; the user's current message is always cited.
     """

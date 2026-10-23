@@ -18,7 +18,7 @@ _MAX_TEXT_CHARS = 4000
 
 
 def send_message(ctx: RunContext, to: str, text: str) -> str:
-    """Send a message to someone on the user's behalf (e.g. "Sam", "Priya Raman").
+    """Record a message on the user's behalf; delivery is simulated.
 
     Args:
         to: The recipient's name.

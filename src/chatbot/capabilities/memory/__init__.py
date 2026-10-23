@@ -52,9 +52,8 @@ async def update_memory(
     the statement replaces and keeps the old version as history.
 
     Args:
-        change: what is now true, in one sentence with names, dates and numbers verbatim, e.g.
-            "The user's manager is Priya Raman" or "The user now wants American spelling
-            (was British)". Preferences are sent with every request: keep them short.
+        change: The new fact, correction or removal in one sentence, preserving names, dates
+            and numbers verbatim. Keep standing preferences short.
         scope: "long_term" for durable facts and standing preferences (every conversation),
             "session" for what applies only to this conversation.
     """
@@ -78,7 +77,7 @@ async def forget(ctx: RunContext, what: str) -> str:
     configuration. Memory finds every place and wording; do not search first.
 
     Args:
-        what: the thing to forget in the user's words, e.g. "my home address".
+        what: The information to forget, in the user's words.
     """
     outcome, deps = await subagent.work(
         subagent.Mode.FORGET,
@@ -100,7 +99,7 @@ def read_memory(ctx: RunContext, ref: str) -> str:
     conversation's context (out:...) or its checkpoint (ckpt:...).
 
     Args:
-        ref: e.g. "msg:40", "rec:3", "note:2", "psg:17", "out:5", "ckpt:1".
+        ref: An exact ref returned by a tool, using msg:, rec:, note:, psg:, out: or ckpt:.
     """
     try:
         return subagent.format_item(records.read(caller_of(ctx), ref))

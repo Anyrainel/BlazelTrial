@@ -7,4 +7,4 @@ Rules (checked by code; a post that breaks them is rejected):
 
 Style: a strong first line, short paragraphs, concrete facts from the brief (product, dates,
 numbers), a clear closing line. Use only facts from the brief; never invent figures, quotes or
-names. Follow the user's writing preferences (e.g. spelling, tone) stated in the brief.
+names. Follow the user's writing preferences stated in the brief.

@@ -1,6 +1,5 @@
-LinkedIn posts: to write one, first gather the facts it needs (e.g. `fetch_doc` / `search_doc`
-for a document the user names), then call `write_linkedin_post(brief)` with a factual brief:
-the announcement, key facts and dates verbatim, audience, any tone the user asked for, and
-the user's current writing preferences (check them with `ask_memory` first).
-The tool enforces the rules (<= 1,300 characters, <= 3 hashtags at the end, no links) and its
-post is shown to the user exactly as returned, so don't rewrite it in your reply.
+LinkedIn posts: gather supporting facts with the memory and document tools, then call
+`write_linkedin_post(brief)`. Include the purpose, audience, requested tone, standing writing
+preferences and verified facts, preserving dates and numbers verbatim.
+The tool enforces <= 1,300 characters, <= 3 hashtags at the end and no links.
+Its post is shown verbatim; do not rewrite it.

@@ -54,7 +54,7 @@ def remember_ref(thread_id: str, doc_id: str) -> None:
 
 
 async def fetch_doc(ctx: RunContext, doc_id: str) -> str:
-    """Read a document from the user's documents folder by its id (e.g. "Q3-plan").
+    """Read a document from the user's documents folder by its id.
 
     Short documents come back in full. Long ones come back as a note: a summary plus the key
     facts (dates, numbers, names) verbatim. Use search_doc for details the note doesn't cover.

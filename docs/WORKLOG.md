@@ -1,5 +1,19 @@
 # Work log
 
+## Hazel prompt review (2026-10-22 Pacific)
+
+Assumption: the request to make prompts concise authorizes wording cleanup while preserving
+existing behavior and safeguards. Reviewed all 13 instruction files, model-facing tool/schema
+descriptions and dynamic assembly; details in PROMPT_REVIEW.md. Removed acceptance-shaped
+manager/spelling/document examples and incidental quoted phrases; consolidated fresh recall
+in the memory capability. Fixed conflicting LinkedIn preference lookups and messaging's stale
+recipient exception. Preserved source verification, version history, local scope, forgetting,
+direct drafting, output limits and budget enforcement. Existing document-discovery work is
+preserved. No stack decision or new behavioral test scaffolding needed.
+
+206 offline tests pass; initial scoped ruff and diff checks pass. Full live local-model
+scenarios are running in .state/prompt-review-20261022; final results to follow.
+
 > Full working log. The one-page deliverable is [../NOTES.md](../NOTES.md).
 
 ## Agent document catalog (2026-10-22 Pacific)
