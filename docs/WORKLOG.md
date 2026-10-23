@@ -1,5 +1,16 @@
 # Work log
 
+## Deliverable notes refresh (2026-10-23 Pacific)
+
+Polished NOTES.md using the user's time estimates and reflections, checked against current
+budget, memory worker, preference injection and forgetting code. Replaced stale estimate
+fallback/hard-forget descriptions and historical result counts with the current design,
+trade-offs and candid limitations. Recorded ~10 elapsed hours across Monday-Friday, including
+agent-development buffer and multitasking; focused human time was lower. Captured the user's
+two AI corrections (deleting visible history and tuning estimates instead of endpoint counting)
+and rejected tool-discovery/scenario-specific retrieval complexity. No application behavior
+changed; validation is documentation review and git diff --check, with no new model calls.
+
 ## Memory review fixes (2026-10-22 Pacific)
 
 Final memory review found, and this change fixes: (1) `save`'s duplicate-key guard listed only

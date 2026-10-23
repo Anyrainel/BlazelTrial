@@ -1,75 +1,76 @@
 # NOTES
 
-Full working log (assumptions, every AI mistake caught, measurements, time log):
-[docs/WORKLOG.md](docs/WORKLOG.md). Decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
+Implementation decisions and detailed validation: [docs/DECISIONS.md](docs/DECISIONS.md)
+and [docs/WORKLOG.md](docs/WORKLOG.md).
 
 ## Design
-- **One core**, `send(user_id, thread_id, text)`, behind CLI, HTTP/web (assistant-ui) and Slack
-  (Socket Mode). Ingested history uses the same pipeline; only the model reply is skipped.
-- **Budget guard on every model**: pre-flight count (provider endpoint, or estimate ×1.5)
-  refuses oversized requests; provider-reported input (incl. cache) is logged per call and
-  must be ≤ `MAX_INPUT_TOKENS`.
-- **Context = static instructions + a bounded recent-turn window.** Nothing about the user is
-  injected. A history hook re-fits every request of a turn: it drops old turns first, then
-  moves the current run's completed tool results behind `out:` refs with a checkpoint.
-- **Tool-first memory** in SQLite:
-  - `ask_memory` runs a bounded read-only subagent. It searches BM25 indexes of versioned
-    memory records, raw messages, source-linked episode notes and opened-document passages,
-    and returns status + answer + sources.
-  - `remember` / `update_memory` write explicit, source-cited, versioned records: session- or
-    long-term-scoped, idempotent per turn.
-  - `forget` deterministically deletes a value everywhere, then VACUUMs.
-- **Big docs** are never inlined: a map-reduce note is cached per content hash, and passages
-  are searchable.
-- **LinkedIn rules** are enforced in code: a validator plus repair, and the post is returned
-  verbatim.
+
+- **One core:** `send(user_id, thread_id, text)` serves CLI, HTTP/web and Slack
+  (Socket Mode, DMs and explicit channel mentions). History ingestion uses the same pipeline.
+- **Token budgeting:** every live model request requires a successful provider token-count
+  endpoint call (Claude/Meta), or the local server's template/tokenizer endpoints. Oversized
+  requests are shrunk and counted again before inference; unavailable counting stops the
+  call. Provider-reported input usage, including cache reads/writes, is logged against the
+  configurable 8,000-token limit. Estimates help plan shrinking, but do not authorize live calls.
+- **Context:** stable instructions and tools precede a bounded rolling window of recent
+  history. The window moves in chunks to preserve prompt-cache reuse. Compaction keeps tool
+  calls paired with their returns; large completed results can be recovered through references.
+- **Memory:** SQLite holds LLM-managed, source-linked notes and versioned records categorized
+  as facts, preferences or tasks. Long-term records are shared across conversations; session
+  records stay local. Current preferences from both applicable scopes are always injected as
+  a size-capped standing-preferences block. Other memory is reached through tools.
+  `ask_memory` delegates recall to a bounded subagent with its own prompt and context. It
+  searches records, notes, document passages and a BM25 session-history index, with exact
+  text lookup and source reads for details that summaries may lose. Updates supersede records
+  so earlier preferences remain explainable.
+- **Forgetting:** the worker finds relevant sources, then deterministic code deletes derived
+  records, notes, saved outputs and index entries. Default soft forgetting flags original chat
+  messages: they remain visible to the user but are excluded from agent search, reads, replay
+  and note generation. Hard deletion is also available.
+- **Capabilities:** large documents are read in chunks and distilled into cached notes;
+  LinkedIn length, hashtag and link rules are validated in code.
 
 ## Trade-offs
-- Tool-first recall costs calls: ~2.6 subagent requests per chat request (was ~4.3 before the
-  answer-early rule). Prompt caching
-  cuts subagent input by 80% in reads, but latency is higher than injection would be.
-- Lexical BM25 by default: notes and vectors added no recall on a 14-question paraphrase eval
-  (12/14 each). Paraphrase gaps rely on the subagent rewording queries.
-- Forget matches literal values the agent supplies (after an `ask_memory` lookup).
-  Deterministic and verifiable, but paraphrased mentions ("the Larkspur place") can survive.
-- Ingest runs no agent, so ingested facts are recalled from raw messages and notes, not from
-  records.
 
-## Results
-`python -m scenarios` (500-turn Slack history, real models):
-- **Claude Sonnet 5.5: 7/7, twice.** 314 calls; max 7,440 input tokens; 0 over.
-- **Muse Spark 1.3 Contributor: 7/7.** Scored from the run's call log after fixing the
-  runner's accounting, not a fresh run. 167 sent calls; max 6,937 input tokens; 0 over; 1
-  request refused at pre-flight and retried smaller.
+- A recall subagent keeps search iterations out of the main agent's 8K context, but its extra
+  model calls make memory-heavy replies slower.
+- I chose memory tools plus an indexed session history for more reliable recall of exact
+  details from long conversations. This requires careful forgetting across every retrieval
+  path while preserving the conversation the user can see.
+- A rolling recent-history window balances continuity, prompt caching and the token limit.
+  Shrinking, recounting and budget retries add latency when context is tight.
+- **assistant-ui** gave me a decent web interface with little frontend work. **PydanticAI**
+  let me customize memory without building the LLM call loop and low-level session handling
+  myself; I chose it over DIY or LangGraph.
 
-141 offline tests; the key guarantees are mutation-checked.
+## What doesn't work / needs more work
 
-## What doesn't work / not done
-- A single user message larger than the budget fails after the retries (no chunking of
-  pasted text).
-- First `fetch_doc` of a big document takes ~95 s (map-reduce, 15+ calls).
-- The local estimate undercounted Claude by up to ~23% on tool-heavy turns. The guard holds,
-  but the estimator isn't tuned.
-- No general schema migration framework. This extension adds a table without altering
-  existing data; existing state is preserved. Slack supports DM/thread replies and
-  explicit channel mentions; files and edits remain unsupported. One Slack worker;
-  durable delivery receipts cover retries, with documented crash windows.
+Memory search is sometimes too slow. Slack integration and web-client connectivity have
+received fixes, but I have not covered every failure mode. Large-document processing and
+repeated context fitting can also delay replies.
 
-Time spent: ~__ hours (fill in).
+## Time spent
 
-## Where the AI was wrong (and how it was caught)
-1. **Token estimate counted every replayed turn's stored instructions.** Providers only
-   receive the latest ones. Each live turn looked ~1.2k tokens bigger, the history window
-   shrank to 2 turns and slid every turn, and the prompt cache never hit. Caught by checking
-   cache reads in the live call log after adding a cache breakpoint showed no effect.
-2. **Doc map-reduce never converged.** Reduce outputs were too big to pair, so the note count
-   stopped shrinking: 149 calls and 892 s for one summary. Caught in the live scenario 3 call
-   log. Groups now always take two or more clipped notes.
+Approximately **10 hours**: Monday ~1h, Tuesday ~1h, Wednesday ~3h, Thursday ~3h, Friday ~2h.
+These are rough elapsed-time estimates with buffer for agents developing. I also worked on
+other projects during those periods, so my actual focused time on this project was lower.
 
-## AI suggestion rejected
-Claude Code's first memory design injected all remembered facts, preferences, summaries and
-search hits into every prompt, filled by automatic extraction. I rejected it in favour of
-agent-called memory tools: with hundreds of facts the injected block blew the 8k budget (11.9k
-pre-flight) and was mostly irrelevant. It also made scope and versioning implicit. The
-tool-first design keeps context small and puts recall behind an inspectable, source-cited
-interface.
+## Where the AI was wrong
+
+1. **Forgetting deleted visible history.** Claude Code assumed forgetting should delete the
+   actual session-history records. I caught this while inspecting test conversations: asking
+   the agent to forget something should not remove that turn from the user's chat. Soft
+   forgetting now preserves the display history while removing it from agent memory paths.
+2. **Token counting used the wrong approach.** Claude Code, and possibly Codex, spent effort
+   estimating input tokens and calibrating estimates against response usage. I caught this
+   approach during review and asked for official token-count endpoints before inference,
+   rather than further estimator tuning.
+
+## AI suggestions I rejected
+
+- Codex proposed tool search to reduce tool context. The current catalog is small; an extra
+  discovery step could add confusion and latency for little token saving. Tools and their
+  instructions are loaded upfront for now.
+- I also rejected more elaborate session-history retrieval machinery aimed at individual
+  scenarios. I preferred well-designed memory tools and clear instructions, retaining the
+  session index for source retrieval without adding scenario-specific complexity.
