@@ -16,7 +16,9 @@ Recycled .state/runtime (about 1.2 MiB) after verifying no process still used it
 were no symlinks. Live database/docs/model state were preserved. Normal logs now live in
 .state/logs/slack.out.log and slack.err.log. No Slack messages were sent for this check;
 connection success does not constitute a new end-to-end delivery scenario PASS.
-No application code changed; earlier 214-test validation remains the current code check.
+No application code changed by this cleanup; tests were not rerun for the process switch.
+An unrelated concurrent slack_app.py edit appeared during final checks and was left untouched;
+the earlier 214-test result does not validate that later edit.
 Use the normal checkout launcher going forward; temporary reviewed snapshots should not
 be left as the live deployment after review ends.
 
