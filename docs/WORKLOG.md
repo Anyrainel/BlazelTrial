@@ -945,3 +945,14 @@ updated the mock and guarded the ALTER for absent tables. Final validation:
 16 calls, max 3,306 input tokens, zero budget violations/refusals; temporary state
 automatically removed. Restarted the single current-checkout Slack worker with
 separate retry-fix logs, preserving earlier logs and all existing conversation data.
+
+## Repeat same-scope web cleanup (2026-10-23 Pacific)
+
+Removed the two current web sessions s-d01ba0e3 and s-bf4706dd (four messages),
+the manager memory record 27 and its source, per the repeated user request.
+Existing hard session-forget operations removed content before empty threads.
+Hashes of all unrelated SQLModel rows match before/after, including Slack DM,
+channel history, memory and receipts. HTTP /threads now lists only the two Slack
+conversations. Sonnet/thinking settings unchanged; no inference needed.
+Validation: 24 forget/soft-forget tests pass; direct DB and live HTTP checks pass.
+Other ongoing source/runtime edits were left untouched.
