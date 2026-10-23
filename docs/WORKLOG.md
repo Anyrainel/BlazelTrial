@@ -1,5 +1,28 @@
 # Work log
 
+## Completed evaluation state cleanup (2026-10-22 Pacific)
+
+Confirmed review directories are independent STATE_DIR roots (database, logs, docs and
+embedding cache), not separate installations. The scenario runner sets STATE_DIR before
+loading chatbot settings; normal app configuration still uses .state. Nesting evaluation
+roots under .state is consistent with D2, but completed runs and ad hoc scripts had accumulated.
+User requested cleanup; treated completed scenario runs and smoke artifacts as included.
+
+Moved prompt-review-20261022, prompt-review-recheck-20261022, review-memory-ui-20261022,
+list-docs-check, soft-forget-smoke, the completed scenarios directory, soft_forget_smoke.py,
+stage_readme_soft.py and logs/memory-artifacts-ui.png to Windows Recycle Bin (about 1,436 MiB).
+Their raw reports are no longer at the historical paths cited below or in PROMPT_REVIEW.md;
+recorded results remain historical evidence, not a new validation run. Permanent deletion
+was blocked by automatic approval policy; recoverable recycling succeeded instead.
+
+Preserved active preparation-check-20261022: a running scenarios --only 3,7 process explicitly
+uses that root. Preserved live state.db and sidecars, docs, logs, models and runtime helpers
+(including the running Slack launcher). Verified cleanup targets resolve under .state and
+cache symlinks stay within each removed root. No application code changed; no model calls
+or scenario reruns were needed for filesystem cleanup. Future disposable evaluations should
+use fresh roots under .state/scenarios and remove them after review; scripts belong outside
+the live state root. Existing concurrent README and fixture edits were left untouched.
+
 ## Hazel prompt review (2026-10-22 Pacific)
 
 Assumption: the request to make prompts concise authorizes wording cleanup while preserving
