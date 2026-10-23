@@ -1,0 +1,124 @@
+history over target (4550 > 4266) in slack-C0CB55JKB7Y; shrinking
+                 pydantic-ai v2.57.0 • Python 3.13.13
+      / \
+     /   \       model: openai:bonsai-2-27b • tools: 9 • capabilities: 1
+   /___.___\
+  /    |    \    observability: off — see every model and tool call live, with cost
+/      |      \    set it up free with Logfire and a GitHub login: https://pydantic.dev/ai-setup.md
+`---.._|_..---'    or use any OpenTelemetry backend: https://pydantic.dev/docs/ai/logfire/#otel
+
+                 goes away once observability is on — or PYDANTIC_AI_NO_BANNER=1
+history over target (4690 > 4266) in slack-dm; shrinking
+chat context refused (preflight: 8118 input tokens exceeds budget of 8000); retrying smaller
+history over target (4690 > 2559) in slack-dm; shrinking
+history over target (4155 > 2559) in slack-dm; shrinking
+history over target (3309 > 2559) in slack-dm; shrinking
+history over target (3309 > 2559) in slack-dm; shrinking
+history over target (3231 > 2559) in slack-dm; shrinking
+history over target (5592 > 4266) in slack-dm; shrinking
+chat context refused (preflight: 10600 input tokens exceeds budget of 8000); retrying smaller
+history over target (3862 > 2559) in slack-dm; shrinking
+history over target (3862 > 2559) in slack-dm; shrinking
+history over target (3145 > 2559) in slack-dm; shrinking
+history over target (3145 > 2559) in slack-dm; shrinking
+history over target (3145 > 2559) in slack-dm; shrinking
+chat context refused (preflight: 8133 input tokens exceeds budget of 8000); retrying smaller
+history over target (3862 > 1493) in slack-dm; shrinking
+history over target (3862 > 1493) in slack-dm; shrinking
+history over target (3145 > 1493) in slack-dm; shrinking
+history over target (3145 > 1493) in slack-dm; shrinking
+history over target (3145 > 1493) in slack-dm; shrinking
+Slack event failed (attempt 1/3)
+Traceback (most recent call last):
+  File "F:\Codes\BlazelTrial\.state\runtime\slack-2014ed5\src\chatbot\surfaces\slack_app.py", line 117, in handle_event
+    await _deliver_event(event, key=key, bot_user_id=bot_user_id, post=post)
+  File "F:\Codes\BlazelTrial\.state\runtime\slack-2014ed5\src\chatbot\surfaces\slack_app.py", line 141, in _deliver_event
+    await send_async(settings.default_user_id, tid, normalize_text(event["text"], bot_user_id))
+  File "F:\Codes\BlazelTrial\.state\runtime\slack-2014ed5\src\chatbot\core.py", line 170, in send_async
+    reply = await _handle(user_id, thread_id, text, generate=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.state\runtime\slack-2014ed5\src\chatbot\core.py", line 153, in _handle
+    reply, run_json, forgotten = await _reply(user_id, thread_id, rows[0])
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.state\runtime\slack-2014ed5\src\chatbot\core.py", line 111, in _reply
+    result = await get_agent().run(
+             ^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\agent\abstract.py", line 678, in run
+    node = await agent_run.next(node)  # pyright: ignore[reportArgumentType]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\run.py", line 656, in next
+    return await self._run_node_with_hooks(node, self._stream_and_advance)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\run.py", line 571, in _run_node_with_hooks
+    result = await lifecycle(node)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\run.py", line 551, in lifecycle
+    result = await step_fn(lifecycle_node)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\run.py", line 670, in _stream_and_advance
+    return await self._advance_graph(node)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\run.py", line 466, in _advance_graph
+    task = await self._graph_run.next(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 579, in next
+    return await anext(self)
+           ^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 556, in __anext__
+    raise self._next.error
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 857, in _run_tracked_task
+    result = await self._run_task(t_)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 915, in _run_task
+    output = await node.call(step_context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_graph\step.py", line 253, in _call_node
+    return await node.run(GraphRunContext(state=ctx.state, deps=ctx.deps))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 1397, in run
+    return await self._make_request(ctx)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 1765, in _make_request
+    model_response = await model_handler(request_context)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 1748, in model_handler
+    response = await self._recover_model_request_error(ctx, run_context, req_ctx, e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 2136, in _recover_model_request_error
+    raise error
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 1734, in model_handler
+    response = await model_request(
+               ^^^^^^^^^^^^^^^^^^^^
+        req_ctx.model, request_context=req_ctx, run_context=run_context, on_progress=on_progress
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "F:\Codes\BlazelTrial\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 1231, in model_request
+    new_response = await model.request(
+                   ^^^^^^^^^^^^^^^^^^^^
+        messages, request_context.model_settings, request_context.model_request_parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "F:\Codes\BlazelTrial\.state\runtime\slack-2014ed5\src\chatbot\agent\budget.py", line 204, in request
+    preflight, method = await self.preflight(messages, model_settings, model_request_parameters)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\Codes\BlazelTrial\.state\runtime\slack-2014ed5\src\chatbot\agent\budget.py", line 163, in preflight
+    raise BudgetExceededError(tokens, self.max_input_tokens, "preflight")
+chatbot.agent.budget.BudgetExceededError: preflight: 8466 input tokens exceeds budget of 8000
+chat context refused (preflight: 8415 input tokens exceeds budget of 8000); retrying smaller
+history over target (3880 > 2559) in slack-dm; shrinking
+history over target (3880 > 2559) in slack-dm; shrinking
+history over target (3163 > 2559) in slack-dm; shrinking
+history over target (3163 > 2559) in slack-dm; shrinking
+history over target (3163 > 2559) in slack-dm; shrinking
+chat context refused (preflight: 9355 input tokens exceeds budget of 8000); retrying smaller
+history over target (3880 > 1493) in slack-dm; shrinking
+history over target (3880 > 1493) in slack-dm; shrinking
+history over target (3163 > 1493) in slack-dm; shrinking
+history over target (3163 > 1493) in slack-dm; shrinking
+history over target (3163 > 1493) in slack-dm; shrinking
+history over target (5498 > 4266) in slack-dm; shrinking

@@ -1,0 +1,18 @@
+
+  VITE v8.3.5  ready in 499 ms
+
+  ➜  Local:   http://127.0.0.1:5173/
+  ➜  press h + enter to show help
+11:33:29 AM [vite] (client) [optimizer] bundling dependencies...
+4:00:55 PM [vite] (client) hmr update /src/Login.tsx
+4:00:55 PM [vite] (client) hmr update /src/App.tsx
+4:00:55 PM [vite] (client) hmr update /src/styles.css
+4:00:55 PM [vite] (client) hmr invalidate /src/Login.tsx Could not Fast Refresh (export "loadHandle" removed)
+4:00:55 PM [vite] (client) hmr update /src/App.tsx
+4:25:13 PM [vite] (client) hmr update /src/App.tsx
+4:25:13 PM [vite] (client) hmr update /src/App.tsx
+4:25:29 PM [vite] (client) hmr update /src/styles.css
+4:27:06 PM [vite] vite.config.ts changed, restarting server...
+4:27:07 PM [vite] server restarted.
+4:32:17 PM [vite] (client) hmr update /src/App.tsx, /src/Memory.tsx
+4:32:17 PM [vite] (client) hmr update /src/Memory.tsx

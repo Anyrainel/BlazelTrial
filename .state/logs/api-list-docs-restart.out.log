@@ -1,0 +1,14 @@
+INFO:     127.0.0.1:53471 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56463 - "GET /agent/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62180 - "POST /threads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62179 - "POST /threads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62178 - "GET /threads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51961 - "GET /threads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59909 - "GET /threads/s-8d7a3b7f/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52439 - "GET /threads/s-8d7a3b7f/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55977 - "GET /threads/s-5abea8af/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56973 - "GET /threads/s-5abea8af/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61326 - "GET /agent/inventory/records?q=&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61325 - "GET /agent/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49467 - "GET /agent/inventory/records?q=&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63621 - "GET /agent/inventory HTTP/1.1" 200 OK

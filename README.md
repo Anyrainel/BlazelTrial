@@ -30,7 +30,8 @@ Then edit `.env`:
   `LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-sonnet-5-5` and `ANTHROPIC_API_KEY`; or
   `LLM_PROVIDER=meta`, `LLM_MODEL=muse-spark-1.3-contributor` and `META_API_KEY`.
 - `MAX_INPUT_TOKENS` sets the per-call input budget (default 8000).
-- All state lives in `STATE_DIR` (default `.state/`, gitignored): `state.db`, `docs/`,
+- All state lives in `STATE_DIR` (default `.state/`, committed as a snapshot of the exact state;
+  model cache, `.pid` and SQLite `-wal`/`-shm` files are ignored): `state.db`, `docs/`,
   `logs/llm_calls.jsonl` and the embedding model cache.
 
 The agent can discover document ids with `list_docs` (paginated), then use `fetch_doc`
@@ -40,8 +41,8 @@ or `search_doc` to read them. Generate the corpus (4 docs of 20k–40k tokens, i
 uv run python scripts/gen_docs.py
 ```
 
-This creates `.state/docs/` on demand; the corpus is gitignored and must be generated
-for each fresh checkout (or configured `STATE_DIR` / `DOCS_DIR`). The four synthetic
+This creates `.state/docs/` on demand; the committed snapshot already contains it; regenerate it
+with the script for a different `STATE_DIR` / `DOCS_DIR`. The four synthetic
 documents are `Q3-plan`, `brand-guidelines`, `eng-onboarding`, and `security-review`.
 With the configured Bonsai tokenizer they contain roughly 25k–29k tokens each.
 `Q3-plan` states Lumen's public launch date as **September 29, 2026**.

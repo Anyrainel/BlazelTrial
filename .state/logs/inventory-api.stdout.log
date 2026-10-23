@@ -1,0 +1,2 @@
+INFO:     127.0.0.1:51686 - "GET /agent/inventory/records?q=&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51685 - "GET /agent/inventory HTTP/1.1" 200 OK

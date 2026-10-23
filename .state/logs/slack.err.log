@@ -1,0 +1,53 @@
+INFO:chatbot.surfaces.slack_app:Slack worker source=F:\Codes\BlazelTrial\src\chatbot\surfaces\slack_app.py; temporary thread status enabled
+INFO:slack_bolt.AsyncApp:A new session (s_153282122048) has been established
+INFO:slack_bolt.AsyncApp:Bolt app is running!
+                 pydantic-ai v2.57.0 • Python 3.13.13
+      / \
+     /   \       model: openai:bonsai-2-27b • tools: 10 • capabilities: 1
+   /___.___\
+  /    |    \    observability: off — see every model and tool call live, with cost
+/      |      \    set it up free with Logfire and a GitHub login: https://pydantic.dev/ai-setup.md
+`---.._|_..---'    or use any OpenTelemetry backend: https://pydantic.dev/docs/ai/logfire/#otel
+
+                 goes away once observability is on — or PYDANTIC_AI_NO_BANNER=1
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:chatbot.capabilities.memory.subagent:ask_memory status=found sources=1 chars_used=247
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:chatbot.capabilities.memory.subagent:ask_memory status=found sources=1 chars_used=484
+INFO:httpx:HTTP Request: POST http://localhost:11434/apply-template "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://localhost:11434/tokenize "HTTP/1.1 200 OK"
+INFO:httpx2:HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"

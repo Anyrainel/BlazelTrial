@@ -1,5 +1,12 @@
-# Runtime state (DB, generated docs, logs, model cache)
-.state/
+# Runtime state is tracked on purpose so reviewers see the exact state (DB, docs, logs).
+# Only machine-local / regenerable pieces are excluded.
+.state/models/
+.state/scenarios/
+.state/logs/*.png
+.state/*.pid
+.state/**/*-shm
+.state/**/*-wal
+!.state/backups/**/*-wal
 
 # Secrets
 .env

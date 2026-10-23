@@ -31,7 +31,7 @@ web/                 # assistant-ui frontend
 scenarios/           # scenario runner (PASS/FAIL) + fixtures/ (slack_history.py, docs.py)
 scripts/             # gen_docs.py etc.
 tests/               # offline unit tests (PydanticAI TestModel/FunctionModel)
-.state/              # runtime only, gitignored: state.db, docs/, logs/, models/
+.state/              # runtime state, committed on purpose (snapshot for reviewers); models/, scenarios/, *.pid, -wal/-shm ignored
 ```
 
 ## Commands
@@ -113,7 +113,8 @@ Config: copy `.env.example` → `.env`. `LLM_PROVIDER` ∈ `anthropic | meta | l
 - New/changed stack decision → add a row to `docs/DECISIONS.md`.
 - Log AI mistakes you catch and suggestions you reject in `docs/WORKLOG.md`; `NOTES.md` is
   the one-page deliverable summary.
-- Never commit secrets, `.env`, `.state/`, `web/node_modules`, or AI transcripts.
+- Never commit secrets, `.env`, `.state/models/`, `web/node_modules`, or AI transcripts. `.state/` itself
+  is tracked on purpose (user decision 2026-10-22) so reviewers see the exact state; keep secrets out of it.
 - Evaluations use `python -m scenarios` with automatic temporary-state cleanup by default.
   Use `--keep-state` or `--state-dir PATH` only when retaining evidence is intentional;
   remove retained state after review. Ad hoc checks must likewise use a temporary directory
