@@ -1,6 +1,7 @@
 """Slack mention filtering, delivery recovery, ordering and core memory boundaries."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,6 +24,51 @@ BASE = {
     "ts": "1.001",
     "text": "<@UHAZEL> hi",
 }
+
+
+def test_socket_listener_wires_status_client(monkeypatch):
+    import slack_bolt.adapter.socket_mode.async_handler as socket_mode
+    import slack_bolt.async_app as bolt
+
+    listeners = {}
+    client = SimpleNamespace(chat_postMessage=AsyncMock(), assistant_threads_setStatus=AsyncMock())
+    handle = AsyncMock()
+
+    class FakeApp:
+        def __init__(self, **kwargs):
+            pass
+
+        def event(self, name):
+            def register(listener):
+                listeners[name] = listener
+                return listener
+
+            return register
+
+    class FakeHandler:
+        def __init__(self, app, token):
+            pass
+
+        async def start_async(self):
+            await listeners["app_mention"](
+                BASE, {"team_id": "T1"}, client, SimpleNamespace(bot_user_id=BOT)
+            )
+
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "test-bot")
+    monkeypatch.setenv("SLACK_APP_TOKEN", "test-app")
+    get_settings.cache_clear()
+    monkeypatch.setattr(bolt, "AsyncApp", FakeApp)
+    monkeypatch.setattr(socket_mode, "AsyncSocketModeHandler", FakeHandler)
+    monkeypatch.setattr(slack, "handle_event", handle)
+    slack.run()
+    handle.assert_awaited_once_with(
+        BASE,
+        body={"team_id": "T1"},
+        bot_user_id=BOT,
+        post=client.chat_postMessage,
+        set_status=client.assistant_threads_setStatus,
+        attempts=3,
+    )
 
 
 def invoke(event=BASE, post=None):

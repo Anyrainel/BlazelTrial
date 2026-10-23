@@ -679,3 +679,28 @@ turns) PASS; S7 (LinkedIn post from Q3-plan with long history) PASS. 89 real Bon
 calls, maximum 4,550 input tokens, zero violations or preflight refusals; elapsed
 328 seconds. Structured report: `.state/preparation-check-20261022/eval-results.json`.
 The full nine-scenario suite and real Slack demo were not rerun in this audit.
+
+## Slack status live-runtime investigation (2026-10-22 Pacific)
+
+User reported no indicator in DMs or channels. Root cause: the actual Socket Mode
+worker was launched from .state/runtime/slack-2014ed5/run_reviewed_slack.py, whose
+frozen adapter predates status support. The earlier fix tested current helper
+code but did not inspect or replace the running snapshot; this was an AI
+verification mistake. Replaced that worker with the current checkout's installed
+chatbot slack entry point. A second worker appeared during investigation; stopped
+the verified duplicate, leaving one worker connected. No credentials/settings changed.
+
+Live validation: auth.test succeeds; granted scopes already include chat:write.
+Real assistant.threads.setStatus calls return ok for both DM and channel, with
+explicit clears also returning ok. Ran the production _working_status helper on
+existing DM and #test thread roots without posting any new chat messages. Browser
+inspection visibly confirmed Hazel is working in both cases (Slack renders its
+own label rather than the supplied is thinking text); DM root gained a working
+indicator and Slack opened its thread. Cleanup removed the indicator. Both probes
+completed and cleared successfully. No emoji reactions were used.
+
+Added worker source/status startup logging and README guidance to distinguish
+current checkout from frozen snapshot launchers. New offline listener-wiring test
+checks the actual Socket Mode listener passes the status client into handle_event.
+No model inference scenario needed for this runtime/observability fix.
+Validation result: 215 offline tests pass; scoped ruff and git diff --check pass. Current worker connected and left running; startup source path confirmed in .state/logs/slack-current.err.log.

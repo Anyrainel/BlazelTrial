@@ -142,6 +142,10 @@ turn is processed, including delivery retries. Long requests refresh the status;
 it is explicitly cleared after success, failure or cancellation. Status updates
 use `assistant.threads.setStatus` with the existing `chat:write` scope; no reaction
 scope is needed. Status API failures are logged without blocking answers.
+Slack may render this as “Hazel is working” under the request or in its reply
+thread. The startup log identifies the loaded source path and confirms status
+support. After updating code, restart with `uv run chatbot slack` from this checkout;
+an old `.state/runtime/` snapshot launcher will continue running its frozen code.
 
 The app ignores ordinary channel messages, bot/self messages, edits and file-share
 subtypes. No `message.channels`/`message.groups` subscriptions or history scopes are

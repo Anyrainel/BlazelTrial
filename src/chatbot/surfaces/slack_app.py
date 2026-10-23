@@ -245,7 +245,7 @@ def run() -> None:
 
     async def main() -> None:
         handler = AsyncSocketModeHandler(app, settings.slack_app_token.get_secret_value())
-        logger.info("Slack connected; listening for DMs and channel @mentions")
+        logger.info("Slack worker source=%s; temporary thread status enabled", __file__)
         await handler.start_async()
 
     asyncio.run(main())
