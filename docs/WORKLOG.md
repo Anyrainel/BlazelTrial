@@ -19,6 +19,12 @@ Eight lifecycle regressions pass, using real child-process SQLite handles for su
 nonzero exit, retention and isolation, plus interruption/launch error and owned-server
 cleanup checks. Validation results follow after full offline and live smoke runs.
 
+Final verification: 214 offline tests pass (35.99s); full ruff, scoped formatting and
+git diff checks pass. Real Bonsai S1 PASS: 17 calls, maximum 2,491 input tokens, zero
+budget violations or preflight refusals. The automatically allocated run-ge2ci4mc root
+was removed after the worker exited; .state/scenarios is empty. Flushed the supervisor's
+startup notice after observing buffered output appear after the worker summary.
+
 ## Completed evaluation state cleanup (2026-10-22 Pacific)
 
 Confirmed review directories are independent STATE_DIR roots (database, logs, docs and

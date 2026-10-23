@@ -51,7 +51,10 @@ def main(argv: list[str] | None = None) -> int:
 
     with TemporaryDirectory(prefix="run-", dir=parent) as temporary:
         state = Path(temporary)
-        print("Temporary evaluation state will be removed on exit (use --keep-state to retain).")
+        print(
+            "Temporary evaluation state will be removed on exit (use --keep-state to retain).",
+            flush=True,
+        )
         try:
             return run_worker(state, argv)
         finally:
